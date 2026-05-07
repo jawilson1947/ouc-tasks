@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # OUC Tasks
 
 Infrastructure task management for **Oakwood University Church**.
@@ -58,3 +59,7 @@ Open any of the HTML files in `docs/mockups/` directly in a browser to preview t
 ## License
 
 Internal Oakwood University Church project. Not for external distribution.
+=======
+# ouc-tasks
+Church Infrastructure task management for administrators, staff, and sub-contractors
+>>>>>>> 9178e2f0b88a3eb5d124baf32f799b9900c98753
