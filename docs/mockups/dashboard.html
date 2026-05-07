@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OUC Infrastructure Tasks — Dashboard</title>
+<style>
+  :root {
+    --ouc-primary:        #333F48;
+    --ouc-primary-hover:  #1F2830;
+    --ouc-accent:         #3B7BD9;
+    --ouc-bg:             #FFFFFF;
+    --ouc-surface:        #F7F8FA;
+    --ouc-surface-alt:    #EFF1F5;
+    --ouc-border:         #E2E5EA;
+    --ouc-text:           #1A1F25;
+    --ouc-text-muted:     #5C6773;
+
+    --status-not:         #8A94A6;
+    --status-prog:        #2563EB;
+    --status-blocked:     #DC2626;
+    --status-done:        #16A34A;
+
+    --cat-surveillance:   #3B7BD9;
+    --cat-access:         #0EA5A4;
+    --cat-av:             #8B5CF6;
+    --cat-cabling:        #F59E0B;
+    --cat-maintenance:    #10B981;
+
+    --shadow-sm: 0 1px 2px rgba(26,31,37,.04), 0 1px 1px rgba(26,31,37,.03);
+    --shadow-md: 0 4px 12px rgba(26,31,37,.06), 0 2px 4px rgba(26,31,37,.04);
+    --radius:    10px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ouc-text);
+    background: var(--ouc-surface);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--ouc-accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ===== Layout ===== */
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    background: var(--ouc-primary);
+    color: #fff;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sidebar .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 4px 8px 20px 8px;
+    border-bottom: 1px solid rgba(255,255,255,.12);
+    margin-bottom: 12px;
+  }
+  .sidebar .brand img { height: 36px; width: auto; }
+  .sidebar .brand-text { font-weight: 700; font-size: 13px; letter-spacing: .04em; line-height: 1.15; }
+  .sidebar .brand-text small { display:block; font-weight: 400; font-size: 11px; opacity: .75; letter-spacing: .04em; }
+
+  .nav-link {
+    display: flex; align-items: center; gap: 10px;
+    color: rgba(255,255,255,.85);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+  .nav-link:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
+  .nav-link.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 600; }
+  .nav-link .icon {
+    width: 16px; height: 16px; display: inline-block;
+    background: currentColor;
+    -webkit-mask-size: contain; mask-size: contain;
+    -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    -webkit-mask-position: center; mask-position: center;
+  }
+
+  .sidebar .footer {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,.12);
+    font-size: 12px;
+    color: rgba(255,255,255,.65);
+  }
+
+  /* ===== Main content ===== */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar {
+    background: var(--ouc-bg);
+    border-bottom: 1px solid var(--ouc-border);
+    padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px;
+  }
+  .topbar .search {
+    flex: 1; max-width: 480px;
+    position: relative;
+  }
+  .topbar .search input {
+    width: 100%;
+    padding: 9px 12px 9px 36px;
+    border: 1px solid var(--ouc-border);
+    border-radius: 8px;
+    font-size: 13.5px;
+    background: var(--ouc-surface);
+    color: var(--ouc-text);
+  }
+  .topbar .search input:focus {
+    outline: 2px solid var(--ouc-accent);
+    outline-offset: -1px;
+    background: #fff;
+  }
+  .topbar .search::before {
+    content: "🔍";
+    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    opacity: .5; font-size: 13px;
+  }
+
+  .topbar .actions { display: flex; align-items: center; gap: 12px; }
+  .btn-primary {
+    background: var(--ouc-primary); color: #fff;
+    border: 0; border-radius: 8px;
+    padding: 9px 14px;
+    font-weight: 600; font-size: 13.5px; cursor: pointer;
+  }
+  .btn-primary:hover { background: var(--ouc-primary-hover); }
+  .btn-secondary {
+    background: var(--ouc-bg); color: var(--ouc-text);
+    border: 1px solid var(--ouc-border); border-radius: 8px;
+    padding: 8px 14px; font-weight: 500; font-size: 13.5px; cursor: pointer;
+  }
+  .btn-secondary:hover { background: var(--ouc-surface-alt); }
+  .avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--ouc-accent); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 12px;
+  }
+
+  .content { padding: 28px; max-width: 1400px; }
+
+  /* ===== Page header ===== */
+  .page-head { display: flex; justify-content: space-between; align-items: end; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
+  .page-head h1 { margin: 0 0 4px 0; font-size: 24px; font-weight: 700; color: var(--ouc-primary); }
+  .page-head .subtitle { color: var(--ouc-text-muted); font-size: 13.5px; }
+
+  /* ===== Stat cards ===== */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat {
+    background: var(--ouc-bg);
+    border: 1px solid var(--ouc-border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: var(--shadow-sm);
+  }
+  .stat .label { color: var(--ouc-text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  .stat .value { font-size: 24px; font-weight: 700; color: var(--ouc-text); margin-top: 4px; line-height: 1.2; }
+  .stat .delta { font-size: 12px; color: var(--ouc-text-muted); margin-top: 4px; }
+  .stat .delta.up { color: var(--status-done); }
+  .stat .delta.bad { color: var(--status-blocked); }
+  .stat.accent { border-top: 3px solid var(--ouc-primary); }
+
+  /* ===== Card / section ===== */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 1024px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--ouc-bg);
+    border: 1px solid var(--ouc-border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .card h2 { font-size: 15px; font-weight: 700; margin: 0; color: var(--ouc-primary); }
+  .card .card-link { font-size: 12.5px; }
+
+  /* ===== Bar charts (CSS only) ===== */
+  .bars { display: flex; flex-direction: column; gap: 10px; }
+  .bar-row { display: grid; grid-template-columns: 70px 1fr 90px; align-items: center; gap: 12px; font-size: 12.5px; }
+  .bar-label { color: var(--ouc-text); font-weight: 500; }
+  .bar-track { background: var(--ouc-surface-alt); border-radius: 4px; height: 16px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; }
+  .bar-value { text-align: right; color: var(--ouc-text-muted); font-variant-numeric: tabular-nums; }
+
+  /* ===== Task list ===== */
+  .task-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .task-table th {
+    text-align: left; font-weight: 600;
+    color: var(--ouc-text-muted);
+    border-bottom: 1px solid var(--ouc-border);
+    padding: 8px 10px; text-transform: uppercase; font-size: 11px; letter-spacing: .04em;
+  }
+  .task-table td { padding: 10px; border-bottom: 1px solid var(--ouc-border); vertical-align: middle; }
+  .task-table tr:last-child td { border-bottom: 0; }
+  .task-table tr:hover { background: var(--ouc-surface); cursor: pointer; }
+
+  .pri { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; font-weight: 700; font-size: 11.5px; color: #fff; }
+  .pri.p5 { background: #1F2830; }
+  .pri.p4 { background: #424E58; }
+  .pri.p3 { background: #6B7480; }
+  .pri.p2 { background: #9BA1A8; }
+  .pri.p1 { background: #C5C9CE; color: #1A1F25; }
+
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; line-height: 1.45; }
+  .badge.cat-Surveillance { background: rgba(59,123,217,.12); color: var(--cat-surveillance); }
+  .badge.cat-Access       { background: rgba(14,165,164,.12); color: var(--cat-access); }
+  .badge.cat-AV           { background: rgba(139,92,246,.12); color: var(--cat-av); }
+  .badge.cat-Cabling      { background: rgba(245,158,11,.15); color: #B45309; }
+  .badge.cat-Maintenance  { background: rgba(16,185,129,.12); color: var(--cat-maintenance); }
+
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+  .status { font-size: 12.5px; font-weight: 500; }
+  .status.not       { color: var(--status-not); }
+  .status.prog      { color: var(--status-prog); }
+  .status.blocked   { color: var(--status-blocked); }
+  .status.done      { color: var(--status-done); }
+  .status.not       .status-dot { background: var(--status-not); }
+  .status.prog      .status-dot { background: var(--status-prog); }
+  .status.blocked   .status-dot { background: var(--status-blocked); }
+  .status.done      .status-dot { background: var(--status-done); }
+
+  .cost { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .muted { color: var(--ouc-text-muted); }
+
+  /* ===== Mockup banner ===== */
+  .mock-banner {
+    background: #FEF3C7; color: #92400E;
+    border-bottom: 1px solid #F59E0B;
+    text-align: center;
+    padding: 6px 12px;
+    font-size: 12px; font-weight: 600;
+  }
+
+  /* ===== Chart canvases ===== */
+  .chart-wrap { position: relative; height: 220px; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="mock-banner">MOCKUP — static preview using real backlog data from OUC IT Infrastructure Tasks.docx</div>
+
+<div class="app">
+
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="../../logos/OUC Reverse Logo (PMS 432).png" alt="Oakwood University Church" />
+      <div class="brand-text">
+        OUC TASKS
+        <small>Infrastructure</small>
+      </div>
+    </div>
+
+    <a class="nav-link active">📊 Dashboard</a>
+    <a class="nav-link">📋 All Tasks</a>
+    <a class="nav-link">⭐ My Tasks</a>
+    <a class="nav-link">🗂️ Board View</a>
+    <a class="nav-link">📈 Reports</a>
+    <a class="nav-link">📎 Receipts</a>
+    <a class="nav-link">👥 Contractors</a>
+    <a class="nav-link">⚙️ Admin</a>
+
+    <div class="footer">
+      tasks.oucsda.org<br/>
+      v0.1.0 — preview
+    </div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <main class="main">
+
+    <header class="topbar">
+      <div class="search">
+        <input type="text" placeholder="Search tasks, sub-tasks, vendors, locations…" />
+      </div>
+      <div class="actions">
+        <button class="btn-secondary">Filters</button>
+        <button class="btn-primary">+ New Task</button>
+        <span class="avatar" title="Jim Wilson">JW</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Page head -->
+      <div class="page-head">
+        <div>
+          <h1>Dashboard</h1>
+          <div class="subtitle">Thursday, May 7, 2026 · 25 tasks across 4 categories</div>
+        </div>
+        <div>
+          <button class="btn-secondary">Export PDF</button>
+          <button class="btn-secondary">Export CSV</button>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stat-grid">
+        <div class="stat accent">
+          <div class="label">Total Backlog</div>
+          <div class="value">$17,493.66</div>
+          <div class="delta">25 tasks · $8,000 labor · $12,220 equipment</div>
+        </div>
+        <div class="stat">
+          <div class="label">Done</div>
+          <div class="value" style="color: var(--status-done);">2</div>
+          <div class="delta up">$871.95 closed</div>
+        </div>
+        <div class="stat">
+          <div class="label">In Progress</div>
+          <div class="value" style="color: var(--status-prog);">2</div>
+          <div class="delta">$975.71 in flight</div>
+        </div>
+        <div class="stat">
+          <div class="label">Blocked</div>
+          <div class="value" style="color: var(--status-blocked);">1</div>
+          <div class="delta bad">Video rack — needs decision</div>
+        </div>
+        <div class="stat">
+          <div class="label">Not Started</div>
+          <div class="value">20</div>
+          <div class="delta">$15,646.00 remaining</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid-2">
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Cost by Priority</h2>
+            <a class="card-link" href="#">Filter →</a>
+          </div>
+          <div class="chart-wrap"><canvas id="chartPriority"></canvas></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Cost by Category</h2>
+            <a class="card-link" href="#">Filter →</a>
+          </div>
+          <div class="chart-wrap"><canvas id="chartCategory"></canvas></div>
+        </div>
+
+      </div>
+
+      <!-- High Priority Tasks -->
+      <div class="card" style="margin-bottom: 24px;">
+        <div class="card-head">
+          <h2>High Priority Tasks</h2>
+          <a class="card-link" href="#">View all 25 →</a>
+        </div>
+        <table class="task-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">P</th>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th style="text-align:right;">Cost</th>
+              <th>Due</th>
+              <th>Owner</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pri p5">5</span></td>
+              <td><strong>Reinstall Treasury live camera and monitor</strong><div class="muted" style="font-size:11.5px;">2 sub-tasks · #3</div></td>
+              <td><span class="badge cat-Surveillance">Surveillance</span></td>
+              <td>Treasury</td>
+              <td><span class="status not"><span class="status-dot"></span>Not Started</span></td>
+              <td class="cost" style="text-align:right;">$546.00</td>
+              <td class="muted">May 21</td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td><span class="pri p5">5</span></td>
+              <td><strong>Repair FLC-100 door hinge assembly</strong><div class="muted" style="font-size:11.5px;">3 sub-tasks · #4</div></td>
+              <td><span class="badge cat-Maintenance">Maintenance</span></td>
+              <td>FLC</td>
+              <td><span class="status prog"><span class="status-dot"></span>In Progress</span></td>
+              <td class="cost" style="text-align:right;">$464.70</td>
+              <td class="muted">May 14</td>
+              <td><span class="avatar" style="width:24px;height:24px;font-size:10px;">RM</span></td>
+            </tr>
+            <tr>
+              <td><span class="pri p5">5</span></td>
+              <td><strong>Fix FLC gym basketball net switch</strong><div class="muted" style="font-size:11.5px;">3 sub-tasks · #22</div></td>
+              <td><span class="badge cat-Maintenance">Maintenance</span></td>
+              <td>FLC Gym</td>
+              <td><span class="status done"><span class="status-dot"></span>Done</span></td>
+              <td class="cost" style="text-align:right;">$265.00</td>
+              <td class="muted">Apr 30</td>
+              <td><span class="avatar" style="width:24px;height:24px;font-size:10px;">RM</span></td>
+            </tr>
+            <tr>
+              <td><span class="pri p4">4</span></td>
+              <td><strong>Reconfigure video production rack</strong><div class="muted" style="font-size:11.5px;">5 sub-tasks · #8 · 2 receipts</div></td>
+              <td><span class="badge cat-AV">AV/Displays</span></td>
+              <td>Video Rack</td>
+              <td><span class="status blocked"><span class="status-dot"></span>Blocked</span></td>
+              <td class="cost" style="text-align:right;">$1,490.00</td>
+              <td class="muted">May 28</td>
+              <td><span class="avatar" style="width:24px;height:24px;font-size:10px;">JW</span></td>
+            </tr>
+            <tr>
+              <td><span class="pri p4">4</span></td>
+              <td><strong>Install choir room surveillance camera</strong><div class="muted" style="font-size:11.5px;">5 sub-tasks · #2 · 1 photo</div></td>
+              <td><span class="badge cat-Surveillance">Surveillance</span></td>
+              <td>Choir Room</td>
+              <td><span class="status prog"><span class="status-dot"></span>In Progress</span></td>
+              <td class="cost" style="text-align:right;">$511.01</td>
+              <td class="muted">May 18</td>
+              <td><span class="avatar" style="width:24px;height:24px;font-size:10px;">DC</span></td>
+            </tr>
+            <tr>
+              <td><span class="pri p3">3</span></td>
+              <td><strong>Automate main lobby double doors</strong><div class="muted" style="font-size:11.5px;">6 sub-tasks · #21</div></td>
+              <td><span class="badge cat-Access">Access</span></td>
+              <td>Main Lobby</td>
+              <td><span class="status not"><span class="status-dot"></span>Not Started</span></td>
+              <td class="cost" style="text-align:right;">$6,025.00</td>
+              <td class="muted">Jun 30</td>
+              <td>—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Two-up: Recent activity + Receipts vs Estimate -->
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-head">
+            <h2>Recent Activity</h2>
+            <a class="card-link" href="#">Audit log →</a>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <span class="avatar" style="width:28px;height:28px;font-size:11px;">RM</span>
+              <div>
+                <div><strong>Ron Martinez</strong> marked sub-task <em>"Install hinge and adjust"</em> done <span class="muted">· 2h ago</span></div>
+                <div class="muted" style="font-size:12px;">Task #4 · Repair FLC-100 door hinge assembly</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <span class="avatar" style="width:28px;height:28px;font-size:11px; background: var(--cat-surveillance);">DC</span>
+              <div>
+                <div><strong>Dan Chen</strong> uploaded a photo to <em>Task #2</em> <span class="muted">· 4h ago</span></div>
+                <div class="muted" style="font-size:12px;">Choir room AXIS overhead camera install</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <span class="avatar" style="width:28px;height:28px;font-size:11px;">JW</span>
+              <div>
+                <div><strong>Jim Wilson</strong> marked Task #8 <span class="status blocked"><span class="status-dot"></span>Blocked</span> <span class="muted">· yesterday</span></div>
+                <div class="muted" style="font-size:12px;">"Awaiting AJA Helo encoder shipment confirmation"</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <span class="avatar" style="width:28px;height:28px;font-size:11px; background: var(--cat-maintenance);">RM</span>
+              <div>
+                <div><strong>Ron Martinez</strong> uploaded a receipt: <em>Home Depot $208.47</em> <span class="muted">· yesterday</span></div>
+                <div class="muted" style="font-size:12px;">Task #22 · gym net switch hardware</div>
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:flex-start;">
+              <span class="avatar" style="width:28px;height:28px;font-size:11px;">JW</span>
+              <div>
+                <div><strong>Jim Wilson</strong> created <em>Task #25 — Install remote door un-lock for Admin Office</em> <span class="muted">· 2 days ago</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Estimated vs Actual Spend</h2>
+            <a class="card-link" href="#">Receipts →</a>
+          </div>
+          <div class="chart-wrap" style="height: 220px;"><canvas id="chartSpend"></canvas></div>
+          <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ouc-border); font-size: 12.5px; display:flex; justify-content:space-between;">
+            <span class="muted">Across all categories</span>
+            <span><strong>$1,209 / $17,494</strong> spent (6.9%)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script>
+  // Shared Chart.js defaults
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = '#5C6773';
+  Chart.defaults.borderColor = '#E2E5EA';
+
+  const usd = (v) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+  // ----- Cost by Priority -----
+  new Chart(document.getElementById('chartPriority'), {
+    type: 'bar',
+    data: {
+      labels: ['P5 (4)', 'P4 (5)', 'P3 (12)', 'P2 (2)', 'P1 (2)'],
+      datasets: [{
+        label: 'Estimated cost',
+        data: [1882.65, 3676.01, 9353.00, 965.00, 1617.00],
+        backgroundColor: ['#1F2830', '#424E58', '#6B7480', '#9BA1A8', '#C5C9CE'],
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => usd(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ticks: { callback: (v) => usd(v) }, grid: { color: '#EFF1F5' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+
+  // ----- Cost by Category -----
+  new Chart(document.getElementById('chartCategory'), {
+    type: 'bar',
+    data: {
+      labels: ['Access', 'AV/Displays', 'Surveillance', 'Maintenance'],
+      datasets: [{
+        label: 'Estimated cost',
+        data: [8665.00, 5608.00, 1890.96, 1329.70],
+        backgroundColor: ['#0EA5A4', '#8B5CF6', '#3B7BD9', '#10B981'],
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => usd(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ticks: { callback: (v) => usd(v) }, grid: { color: '#EFF1F5' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+
+  // ----- Estimated vs Actual -----
+  new Chart(document.getElementById('chartSpend'), {
+    type: 'bar',
+    data: {
+      labels: ['Access', 'AV/Displays', 'Surveillance', 'Maintenance'],
+      datasets: [
+        {
+          label: 'Estimated',
+          data: [8665, 5608, 1891, 1330],
+          backgroundColor: '#E2E5EA',
+          borderRadius: 4,
+          borderSkipped: false,
+        },
+        {
+          label: 'Actual (receipts)',
+          data: [0, 208, 346, 655],
+          backgroundColor: '#333F48',
+          borderRadius: 4,
+          borderSkipped: false,
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 12 } },
+        tooltip: { callbacks: { label: (ctx) => ctx.dataset.label + ': ' + usd(ctx.parsed.x) } }
+      },
+      scales: {
+        x: { ticks: { callback: (v) => usd(v) }, grid: { color: '#EFF1F5' } },
+        y: { grid: { display: false } }
+      }
+    }
+  });
+</script>
+
+</body>
+</html>

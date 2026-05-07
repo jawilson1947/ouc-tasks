@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign in — OUC Infrastructure Tasks</title>
+<style>
+  :root {
+    --ouc-primary:        #333F48;
+    --ouc-primary-hover:  #1F2830;
+    --ouc-accent:         #3B7BD9;
+    --ouc-bg:             #FFFFFF;
+    --ouc-surface:        #F7F8FA;
+    --ouc-surface-alt:    #EFF1F5;
+    --ouc-border:         #E2E5EA;
+    --ouc-text:           #1A1F25;
+    --ouc-text-muted:     #5C6773;
+
+    --shadow-md: 0 4px 12px rgba(26,31,37,.06), 0 2px 4px rgba(26,31,37,.04);
+    --shadow-lg: 0 12px 40px rgba(26,31,37,.10), 0 4px 12px rgba(26,31,37,.06);
+    --radius:    12px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100vh; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ouc-text);
+    background: var(--ouc-surface);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+  }
+  a { color: var(--ouc-accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Subtle decorative top band in brand color */
+  .top-band {
+    height: 6px;
+    background: linear-gradient(90deg, var(--ouc-primary) 0%, #4A5762 50%, var(--ouc-primary) 100%);
+  }
+
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--ouc-bg);
+    border: 1px solid var(--ouc-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 36px 32px 28px;
+  }
+
+  .brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+  .brand img {
+    width: auto;
+    max-height: 110px;
+    margin-bottom: 14px;
+  }
+  .brand .app-name {
+    font-size: 13px;
+    color: var(--ouc-text-muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--ouc-primary);
+    text-align: center;
+    margin: 0 0 6px 0;
+  }
+  .subtitle {
+    text-align: center;
+    color: var(--ouc-text-muted);
+    font-size: 13.5px;
+    margin-bottom: 24px;
+  }
+
+  /* ===== Form ===== */
+  form { display: flex; flex-direction: column; gap: 14px; }
+  label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ouc-text);
+    margin-bottom: 6px;
+  }
+  .field { position: relative; }
+  input[type="email"], input[type="password"] {
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid var(--ouc-border);
+    border-radius: 8px;
+    font-size: 14px;
+    background: var(--ouc-bg);
+    color: var(--ouc-text);
+    transition: border-color .12s ease, box-shadow .12s ease;
+  }
+  input:focus {
+    outline: none;
+    border-color: var(--ouc-accent);
+    box-shadow: 0 0 0 3px rgba(59,123,217,.18);
+  }
+  .row-between {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12.5px;
+  }
+  .checkbox {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--ouc-text-muted);
+    cursor: pointer;
+  }
+  .checkbox input { accent-color: var(--ouc-primary); }
+
+  .btn {
+    width: 100%;
+    padding: 11px 14px;
+    border: 0;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .btn-primary {
+    background: var(--ouc-primary);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--ouc-primary-hover); }
+
+  .btn-google {
+    background: #fff;
+    color: var(--ouc-text);
+    border: 1px solid var(--ouc-border);
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-google:hover { background: var(--ouc-surface-alt); border-color: #C9CFD7; }
+  .btn-google svg { width: 18px; height: 18px; }
+
+  .divider {
+    display: flex; align-items: center; gap: 12px;
+    color: var(--ouc-text-muted);
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    margin: 18px 0;
+  }
+  .divider::before, .divider::after {
+    content: ""; flex: 1; height: 1px; background: var(--ouc-border);
+  }
+
+  .footer-note {
+    margin-top: 24px;
+    text-align: center;
+    color: var(--ouc-text-muted);
+    font-size: 12px;
+  }
+
+  .page-footer {
+    text-align: center;
+    color: var(--ouc-text-muted);
+    font-size: 12px;
+    padding: 16px 12px 24px;
+  }
+
+  /* Mockup banner */
+  .mock-banner {
+    background: #FEF3C7; color: #92400E;
+    border-bottom: 1px solid #F59E0B;
+    text-align: center;
+    padding: 6px 12px;
+    font-size: 12px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="mock-banner">MOCKUP — Sign-in screen for tasks.oucsda.org</div>
+<div class="top-band"></div>
+
+<div class="stage">
+  <div class="login-card">
+    <div class="brand">
+      <img src="../../logos/OUC Full Logo (PMS 432).png" alt="Oakwood University Church" />
+      <div class="app-name">Infrastructure Tasks</div>
+    </div>
+
+    <h1>Sign in to your account</h1>
+    <p class="subtitle">Welcome back. Sign in to manage tasks, track costs, and collaborate with your team.</p>
+
+    <form onsubmit="event.preventDefault(); alert('Mockup only — sign-in not wired up.');">
+      <div>
+        <label for="email">Email</label>
+        <div class="field">
+          <input id="email" type="email" placeholder="you@oucsda.org" autocomplete="email" required />
+        </div>
+      </div>
+
+      <div>
+        <label for="password">Password</label>
+        <div class="field">
+          <input id="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+      </div>
+
+      <div class="row-between">
+        <label class="checkbox">
+          <input type="checkbox" />
+          Keep me signed in
+        </label>
+        <a href="#">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn btn-primary">Sign in</button>
+    </form>
+
+    <div class="divider">or continue with</div>
+
+    <button class="btn btn-google" onclick="alert('Mockup only — Google OAuth not wired up.');">
+      <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92c1.71-1.57 2.69-3.89 2.69-6.62z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.97 10.71a5.41 5.41 0 0 1 0-3.42V4.96H.96a9 9 0 0 0 0 8.08l3.01-2.33z"/>
+        <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A9 9 0 0 0 .96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <div class="footer-note">
+      Don't have an account? Contact your administrator to be invited.
+    </div>
+  </div>
+</div>
+
+<div class="page-footer">
+  © 2026 Oakwood University Church · tasks.oucsda.org
+</div>
+
+</body>
+</html>

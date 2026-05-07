@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task #4 — Repair FLC-100 door hinge assembly · OUC Tasks</title>
+<style>
+  :root {
+    --ouc-primary:        #333F48;
+    --ouc-primary-hover:  #1F2830;
+    --ouc-accent:         #3B7BD9;
+    --ouc-bg:             #FFFFFF;
+    --ouc-surface:        #F7F8FA;
+    --ouc-surface-alt:    #EFF1F5;
+    --ouc-border:         #E2E5EA;
+    --ouc-text:           #1A1F25;
+    --ouc-text-muted:     #5C6773;
+
+    --status-not:         #8A94A6;
+    --status-prog:        #2563EB;
+    --status-blocked:     #DC2626;
+    --status-done:        #16A34A;
+
+    --cat-surveillance:   #3B7BD9;
+    --cat-access:         #0EA5A4;
+    --cat-av:             #8B5CF6;
+    --cat-cabling:        #F59E0B;
+    --cat-maintenance:    #10B981;
+
+    --shadow-sm: 0 1px 2px rgba(26,31,37,.04), 0 1px 1px rgba(26,31,37,.03);
+    --shadow-md: 0 4px 12px rgba(26,31,37,.06), 0 2px 4px rgba(26,31,37,.04);
+    --radius:    10px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100vh; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ouc-text);
+    background: var(--ouc-surface);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--ouc-accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ===== Layout ===== */
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+
+  /* ===== Sidebar ===== */
+  .sidebar { background: var(--ouc-primary); color: #fff; padding: 24px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .sidebar .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px 8px; border-bottom: 1px solid rgba(255,255,255,.12); margin-bottom: 12px; }
+  .sidebar .brand img { height: 36px; width: auto; }
+  .sidebar .brand-text { font-weight: 700; font-size: 13px; letter-spacing: .04em; line-height: 1.15; }
+  .sidebar .brand-text small { display:block; font-weight: 400; font-size: 11px; opacity: .75; letter-spacing: .04em; }
+  .nav-link { display: flex; align-items: center; gap: 10px; color: rgba(255,255,255,.85); padding: 9px 12px; border-radius: 8px; font-size: 13.5px; cursor: pointer; transition: background .15s ease; }
+  .nav-link:hover { background: rgba(255,255,255,.08); color: #fff; text-decoration: none; }
+  .nav-link.active { background: rgba(255,255,255,.14); color: #fff; font-weight: 600; }
+  .sidebar .footer { margin-top: auto; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.12); font-size: 12px; color: rgba(255,255,255,.65); }
+
+  /* ===== Main ===== */
+  .main { display: flex; flex-direction: column; min-width: 0; }
+
+  .topbar { background: var(--ouc-bg); border-bottom: 1px solid var(--ouc-border); padding: 14px 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .topbar .search { flex: 1; max-width: 480px; position: relative; }
+  .topbar .search input { width: 100%; padding: 9px 12px 9px 36px; border: 1px solid var(--ouc-border); border-radius: 8px; font-size: 13.5px; background: var(--ouc-surface); }
+  .topbar .search::before { content: "🔍"; position: absolute; left: 11px; top: 50%; transform: translateY(-50%); opacity: .5; font-size: 13px; }
+  .topbar .actions { display: flex; align-items: center; gap: 12px; }
+  .btn-primary { background: var(--ouc-primary); color: #fff; border: 0; border-radius: 8px; padding: 9px 14px; font-weight: 600; font-size: 13.5px; cursor: pointer; }
+  .btn-primary:hover { background: var(--ouc-primary-hover); }
+  .btn-secondary { background: var(--ouc-bg); color: var(--ouc-text); border: 1px solid var(--ouc-border); border-radius: 8px; padding: 8px 14px; font-weight: 500; font-size: 13.5px; cursor: pointer; }
+  .btn-secondary:hover { background: var(--ouc-surface-alt); }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--ouc-accent); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px; }
+
+  .content { padding: 24px 28px; max-width: 1400px; }
+
+  /* ===== Breadcrumb / Title ===== */
+  .crumb { font-size: 12.5px; color: var(--ouc-text-muted); margin-bottom: 10px; }
+  .crumb a { color: var(--ouc-text-muted); }
+  .crumb a:hover { color: var(--ouc-primary); }
+  .crumb .sep { margin: 0 6px; opacity: .5; }
+
+  .title-row { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 8px; }
+  .pri { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; font-weight: 700; font-size: 14px; color: #fff; flex-shrink: 0; margin-top: 2px; }
+  .pri.p5 { background: #1F2830; }
+  .pri.p4 { background: #424E58; }
+  .pri.p3 { background: #6B7480; }
+  .pri.p2 { background: #9BA1A8; }
+  .pri.p1 { background: #C5C9CE; color: #1A1F25; }
+
+  h1 { font-size: 22px; font-weight: 700; margin: 0; color: var(--ouc-primary); line-height: 1.25; }
+  .legacy-id { color: var(--ouc-text-muted); font-weight: 500; font-size: 14px; margin-left: 8px; }
+
+  .meta-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.45; }
+  .badge.cat-Surveillance { background: rgba(59,123,217,.12); color: var(--cat-surveillance); }
+  .badge.cat-Access       { background: rgba(14,165,164,.12); color: var(--cat-access); }
+  .badge.cat-AV           { background: rgba(139,92,246,.12); color: var(--cat-av); }
+  .badge.cat-Maintenance  { background: rgba(16,185,129,.12); color: var(--cat-maintenance); }
+  .status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status.not       { background: rgba(138,148,166,.12); color: var(--status-not); }
+  .status.prog      { background: rgba(37,99,235,.12);  color: var(--status-prog); }
+  .status.blocked   { background: rgba(220,38,38,.12);  color: var(--status-blocked); }
+  .status.done      { background: rgba(22,163,74,.12);  color: var(--status-done); }
+  .status.not       .dot { background: var(--status-not); }
+  .status.prog      .dot { background: var(--status-prog); }
+  .status.blocked   .dot { background: var(--status-blocked); }
+  .status.done      .dot { background: var(--status-done); }
+
+  /* ===== Two-col layout ===== */
+  .columns { display: grid; grid-template-columns: 1fr 320px; gap: 20px; margin-top: 20px; align-items: start; }
+  @media (max-width: 1100px) { .columns { grid-template-columns: 1fr; } }
+
+  .card { background: var(--ouc-bg); border: 1px solid var(--ouc-border); border-radius: var(--radius); padding: 18px 20px; box-shadow: var(--shadow-sm); }
+  .card + .card { margin-top: 16px; }
+  .card h2 { font-size: 14px; font-weight: 700; margin: 0 0 12px 0; color: var(--ouc-primary); text-transform: uppercase; letter-spacing: .04em; font-size: 12px; }
+  .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-head h2 { margin: 0; }
+
+  /* ===== Description ===== */
+  .description { color: var(--ouc-text); font-size: 13.5px; }
+
+  /* ===== Sub-tasks ===== */
+  .subtasks { display: flex; flex-direction: column; gap: 4px; }
+  .subtask {
+    display: grid;
+    grid-template-columns: 24px 1fr 100px 120px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 8px;
+    border-radius: 6px;
+    transition: background .12s;
+  }
+  .subtask:hover { background: var(--ouc-surface); }
+  .subtask + .subtask { border-top: 1px solid var(--ouc-border); }
+  .subtask input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ouc-primary); cursor: pointer; }
+  .subtask .desc { font-size: 13.5px; }
+  .subtask.done .desc { color: var(--ouc-text-muted); text-decoration: line-through; }
+  .subtask .cost { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+  .subtask .status-mini { font-size: 11.5px; text-transform: uppercase; font-weight: 600; letter-spacing: .04em; text-align: center; }
+  .subtask.done   .status-mini { color: var(--status-done); }
+  .subtask.prog   .status-mini { color: var(--status-prog); }
+  .subtask.not    .status-mini { color: var(--status-not); }
+
+  .subtotals {
+    display: grid;
+    grid-template-columns: 24px 1fr 100px 120px;
+    gap: 12px;
+    padding: 12px 8px 0;
+    margin-top: 8px;
+    border-top: 2px solid var(--ouc-border);
+    font-size: 12.5px;
+    color: var(--ouc-text-muted);
+  }
+  .subtotals .total {
+    grid-column: 3;
+    font-weight: 700;
+    color: var(--ouc-primary);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  /* ===== Attachments grid ===== */
+  .grid-attach { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .attach {
+    border: 1px solid var(--ouc-border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--ouc-surface);
+    cursor: pointer;
+    transition: box-shadow .12s, transform .12s;
+  }
+  .attach:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+  .attach .thumb { aspect-ratio: 4/3; background: linear-gradient(135deg, #C5C9CE 0%, #9BA1A8 100%); display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.85); font-size: 28px; }
+  .attach .thumb.receipt { background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%); color: #92400E; }
+  .attach .info { padding: 8px 10px; font-size: 12px; }
+  .attach .info .name { font-weight: 600; color: var(--ouc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .attach .info .meta { color: var(--ouc-text-muted); margin-top: 2px; font-size: 11px; }
+  .attach .info .amount { font-weight: 700; color: var(--ouc-primary); margin-top: 2px; }
+  .attach.upload {
+    border: 2px dashed var(--ouc-border);
+    background: transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--ouc-text-muted);
+    font-size: 12.5px;
+    aspect-ratio: 4/3;
+  }
+  .attach.upload:hover { border-color: var(--ouc-accent); color: var(--ouc-accent); }
+  .attach.upload .plus { font-size: 24px; line-height: 1; margin-bottom: 4px; }
+
+  /* ===== Comments ===== */
+  .comments { display: flex; flex-direction: column; gap: 14px; }
+  .comment { display: grid; grid-template-columns: 32px 1fr; gap: 10px; }
+  .comment .body { background: var(--ouc-surface); padding: 8px 12px; border-radius: 8px; font-size: 13px; }
+  .comment .body strong { color: var(--ouc-primary); }
+  .comment .body .when { color: var(--ouc-text-muted); font-weight: 400; font-size: 11.5px; margin-left: 8px; }
+  .comment .body p { margin: 4px 0 0 0; }
+
+  .comment-form { display: grid; grid-template-columns: 32px 1fr; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ouc-border); }
+  .comment-form textarea {
+    width: 100%; min-height: 70px; resize: vertical;
+    padding: 10px 12px; border: 1px solid var(--ouc-border); border-radius: 8px;
+    font-family: inherit; font-size: 13.5px; color: var(--ouc-text);
+    background: var(--ouc-bg);
+  }
+  .comment-form textarea:focus { outline: none; border-color: var(--ouc-accent); box-shadow: 0 0 0 3px rgba(59,123,217,.18); }
+  .comment-form .row { display: flex; justify-content: flex-end; margin-top: 8px; gap: 8px; }
+
+  /* ===== Side rail ===== */
+  .meta-list { display: flex; flex-direction: column; gap: 14px; }
+  .meta-item { display: grid; grid-template-columns: 100px 1fr; align-items: center; gap: 10px; font-size: 13px; }
+  .meta-item .key { color: var(--ouc-text-muted); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .meta-item .val { font-weight: 500; color: var(--ouc-text); }
+
+  .cost-summary { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+  .cost-summary .row { display: flex; justify-content: space-between; }
+  .cost-summary .row.total { padding-top: 10px; border-top: 1px solid var(--ouc-border); font-weight: 700; color: var(--ouc-primary); font-size: 15px; }
+  .cost-summary .receipts-rolled { font-size: 11.5px; color: var(--ouc-text-muted); margin-top: 2px; }
+
+  /* ===== Mockup banner ===== */
+  .mock-banner { background: #FEF3C7; color: #92400E; border-bottom: 1px solid #F59E0B; text-align: center; padding: 6px 12px; font-size: 12px; font-weight: 600; }
+
+  /* Avatars colors */
+  .av-rm { background: var(--cat-maintenance); }
+  .av-jw { background: var(--ouc-accent); }
+  .av-dc { background: var(--cat-surveillance); }
+</style>
+</head>
+<body>
+
+<div class="mock-banner">MOCKUP — Task detail page</div>
+
+<div class="app">
+
+  <!-- ===== Sidebar ===== -->
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="../../logos/OUC Reverse Logo (PMS 432).png" alt="Oakwood University Church" />
+      <div class="brand-text">OUC TASKS<small>Infrastructure</small></div>
+    </div>
+    <a class="nav-link">📊 Dashboard</a>
+    <a class="nav-link active">📋 All Tasks</a>
+    <a class="nav-link">⭐ My Tasks</a>
+    <a class="nav-link">🗂️ Board View</a>
+    <a class="nav-link">📈 Reports</a>
+    <a class="nav-link">📎 Receipts</a>
+    <a class="nav-link">👥 Contractors</a>
+    <a class="nav-link">⚙️ Admin</a>
+    <div class="footer">tasks.oucsda.org<br/>v0.1.0 — preview</div>
+  </aside>
+
+  <!-- ===== Main ===== -->
+  <main class="main">
+
+    <header class="topbar">
+      <div class="search"><input type="text" placeholder="Search tasks, sub-tasks, vendors, locations…" /></div>
+      <div class="actions">
+        <button class="btn-secondary">Print Work Order</button>
+        <button class="btn-primary">+ New Task</button>
+        <span class="avatar av-jw" title="Jim Wilson">JW</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Breadcrumb -->
+      <div class="crumb">
+        <a href="#">All Tasks</a>
+        <span class="sep">›</span>
+        <a href="#">Maintenance</a>
+        <span class="sep">›</span>
+        <span>Task #4</span>
+      </div>
+
+      <!-- Title row -->
+      <div class="title-row">
+        <span class="pri p5" title="Priority 5">5</span>
+        <div style="flex:1; min-width:0;">
+          <h1>Repair FLC-100 door hinge assembly <span class="legacy-id">#4</span></h1>
+          <div class="meta-pills">
+            <span class="status prog"><span class="dot"></span>In Progress</span>
+            <span class="badge cat-Maintenance">Maintenance</span>
+            <span style="color: var(--ouc-text-muted); font-size: 12.5px; align-self:center;">📍 Family Life Center · Due May 14, 2026</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-secondary">Edit</button>
+          <button class="btn-secondary">⋯</button>
+        </div>
+      </div>
+
+      <div class="columns">
+
+        <!-- ===== Left column ===== -->
+        <div>
+
+          <!-- Description -->
+          <div class="card">
+            <h2>Description</h2>
+            <p class="description">
+              The FLC-100 main entry door hinge assembly is showing wear and intermittent sag, causing the door
+              to drag and the strike plate to misalign. Replace the FAAN950 hinge and hardware, then re-adjust
+              the door to spec. Coordinate with security to avoid disrupting weekday access; afternoon work
+              window preferred.
+            </p>
+          </div>
+
+          <!-- Sub-tasks -->
+          <div class="card">
+            <div class="card-head">
+              <h2>Sub-tasks</h2>
+              <a class="card-link" href="#">+ Add sub-task</a>
+            </div>
+            <div class="subtasks">
+
+              <div class="subtask done">
+                <input type="checkbox" checked />
+                <div class="desc">Order FAAN950 hinge and hardware</div>
+                <div class="cost">$289.70</div>
+                <div class="status-mini">Done</div>
+              </div>
+
+              <div class="subtask done">
+                <input type="checkbox" checked />
+                <div class="desc">Remove existing hinge assembly and inspect frame</div>
+                <div class="cost">$70.00</div>
+                <div class="status-mini">Done</div>
+              </div>
+
+              <div class="subtask prog">
+                <input type="checkbox" />
+                <div class="desc">Install hinge and adjust strike plate alignment</div>
+                <div class="cost">$105.00</div>
+                <div class="status-mini">In progress</div>
+              </div>
+
+            </div>
+            <div class="subtotals">
+              <div></div>
+              <div>3 sub-tasks · 2 done · 1 in progress</div>
+              <div class="total">$464.70</div>
+              <div></div>
+            </div>
+          </div>
+
+          <!-- Attachments -->
+          <div class="card">
+            <div class="card-head">
+              <h2>Photos &amp; Receipts <span style="color: var(--ouc-text-muted); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 11.5px;">(3 photos, 1 receipt)</span></h2>
+              <a class="card-link" href="#">View all</a>
+            </div>
+            <div class="grid-attach">
+
+              <div class="attach">
+                <div class="thumb">📷</div>
+                <div class="info">
+                  <div class="name">hinge_before.jpg</div>
+                  <div class="meta">RM · May 6</div>
+                </div>
+              </div>
+
+              <div class="attach">
+                <div class="thumb">📷</div>
+                <div class="info">
+                  <div class="name">frame_inspection.jpg</div>
+                  <div class="meta">RM · May 6</div>
+                </div>
+              </div>
+
+              <div class="attach">
+                <div class="thumb receipt">🧾</div>
+                <div class="info">
+                  <div class="name">faan950_invoice.pdf</div>
+                  <div class="meta">Henderson Hardware · May 5</div>
+                  <div class="amount">$289.70</div>
+                </div>
+              </div>
+
+              <div class="attach">
+                <div class="thumb">📷</div>
+                <div class="info">
+                  <div class="name">install_progress.jpg</div>
+                  <div class="meta">RM · today, 11:24am</div>
+                </div>
+              </div>
+
+              <div class="attach upload">
+                <span class="plus">+</span>
+                Upload photo or receipt
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Comments -->
+          <div class="card">
+            <div class="card-head">
+              <h2>Comments &amp; Activity</h2>
+              <a class="card-link" href="#">Filter activity</a>
+            </div>
+
+            <div class="comments">
+
+              <div class="comment">
+                <span class="avatar av-jw">JW</span>
+                <div class="body">
+                  <strong>Jim Wilson</strong> created task and assigned to Ron <span class="when">May 4 · 9:14am</span>
+                </div>
+              </div>
+
+              <div class="comment">
+                <span class="avatar av-rm">RM</span>
+                <div class="body">
+                  <strong>Ron Martinez</strong> <span class="when">May 5 · 2:48pm</span>
+                  <p>Hardware arrived. Frame looks straight, no shimming needed. Will start the swap tomorrow afternoon between services.</p>
+                </div>
+              </div>
+
+              <div class="comment">
+                <span class="avatar av-rm">RM</span>
+                <div class="body">
+                  <strong>Ron Martinez</strong> uploaded <em>frame_inspection.jpg</em> and <em>hinge_before.jpg</em> <span class="when">May 6 · 3:02pm</span>
+                </div>
+              </div>
+
+              <div class="comment">
+                <span class="avatar av-rm">RM</span>
+                <div class="body">
+                  <strong>Ron Martinez</strong> marked <em>"Remove existing hinge assembly and inspect frame"</em> done <span class="when">May 6 · 4:18pm</span>
+                </div>
+              </div>
+
+              <div class="comment">
+                <span class="avatar av-rm">RM</span>
+                <div class="body">
+                  <strong>Ron Martinez</strong> <span class="when">today · 11:30am</span>
+                  <p>New hinge installed. Door swings clean — finishing strike plate adjustment after lunch. Will mark complete by end of day.</p>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- New comment form -->
+            <div class="comment-form">
+              <span class="avatar av-jw">JW</span>
+              <div>
+                <textarea placeholder="Add a comment, mention @someone, or paste a link…"></textarea>
+                <div class="row">
+                  <button class="btn-secondary">Attach file</button>
+                  <button class="btn-primary">Post comment</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- ===== Side rail ===== -->
+        <aside>
+
+          <div class="card">
+            <h2>Details</h2>
+            <div class="meta-list">
+              <div class="meta-item"><span class="key">Status</span><span class="val"><span class="status prog"><span class="dot"></span>In Progress</span></span></div>
+              <div class="meta-item"><span class="key">Priority</span><span class="val">P5 — Highest</span></div>
+              <div class="meta-item"><span class="key">Assignee</span><span class="val"><span class="avatar av-rm" style="width:22px;height:22px;font-size:10px; vertical-align:middle; margin-right:6px;">RM</span>Ron Martinez</span></div>
+              <div class="meta-item"><span class="key">Due</span><span class="val">May 14, 2026 <span style="color: var(--status-blocked); font-size: 11.5px; font-weight: 600;">(7 days)</span></span></div>
+              <div class="meta-item"><span class="key">Category</span><span class="val"><span class="badge cat-Maintenance">Maintenance</span></span></div>
+              <div class="meta-item"><span class="key">Location</span><span class="val">FLC — Family Life Center</span></div>
+              <div class="meta-item"><span class="key">Created</span><span class="val">May 4, 2026<br/><span style="color: var(--ouc-text-muted); font-size: 11.5px;">by Jim Wilson</span></span></div>
+              <div class="meta-item"><span class="key">Updated</span><span class="val">today, 11:30am</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Cost Summary</h2>
+            <div class="cost-summary">
+              <div class="row"><span>Labor (estimated)</span><span class="cost">$175.00</span></div>
+              <div class="row"><span>Equipment (estimated)</span><span class="cost">$289.70</span></div>
+              <div class="row total"><span>Total estimate</span><span class="cost">$464.70</span></div>
+              <div class="row" style="margin-top: 10px;"><span style="color: var(--ouc-text-muted);">Receipts logged</span><span class="cost" style="color: var(--ouc-text-muted);">$289.70</span></div>
+              <div class="receipts-rolled">1 receipt · variance $0.00</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Quick Actions</h2>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button class="btn-secondary" style="text-align: left;">📎 Upload photo</button>
+              <button class="btn-secondary" style="text-align: left;">🧾 Add receipt</button>
+              <button class="btn-secondary" style="text-align: left;">👤 Reassign</button>
+              <button class="btn-secondary" style="text-align: left;">📅 Change due date</button>
+              <button class="btn-primary" style="text-align: left;">✅ Mark task complete</button>
+            </div>
+          </div>
+
+        </aside>
+
+      </div>
+    </div>
+  </main>
+
+</div>
+
+</body>
+</html>
