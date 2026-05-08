@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+ * OUC brand tokens — exposed as Tailwind utility colors.
+ * Use as bg-ouc-primary, text-ouc-text-muted, border-ouc-border, etc.
+ * Sourced from docs/mockups/*.html.
+ * ------------------------------------------------------------------------- */
+@theme {
+  --color-ouc-primary:        #333F48;
+  --color-ouc-primary-hover:  #1F2830;
+  --color-ouc-accent:         #3B7BD9;
+  --color-o
