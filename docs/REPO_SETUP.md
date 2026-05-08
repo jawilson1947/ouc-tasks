@@ -168,7 +168,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY=ONLY_USE_SERVER_SIDE
 "@ | Out-File -Encoding utf8 .env.example
-
+https://supabase.com/dashboard/project/pohlfmjvvcomvszqgnks
 # .env.local (DO NOT commit — already in .gitignore)
 copy .env.example .env.local
 # then edit .env.local with the real values from Supabase project settings

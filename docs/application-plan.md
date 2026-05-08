@@ -1,6 +1,6 @@
 # Oakwood University Church — Infrastructure Task Management Application — Implementation Plan
 
-> **Project folder:** `C:\OUCtasks` (logo assets in `C:\OUCtasks\logos`)
+> **Project folder:** `C:\ouctasks` (logo assets in `C:\ouctasks\logos`)
 > **Brand color:** Pantone 432 C — `#333F48` (charcoal-blue)
 > **Custom domain:** `tasks.oucsda.org`
 
@@ -109,7 +109,7 @@ The open questions from the prior draft are resolved. These are now requirements
 
 **Receipts.** Stored in the app, attached to the task or sub-task they belong to, tagged with vendor and dollar amount. The Attachment entity in Section 3 has been updated to support this. Receipt totals will be summed alongside estimated costs in the dashboard.
 
-**Branding.** Logo assets received and stored in `C:\OUCtasks\logos` (Block, Full, Reverse, and LogoTEXT variants in BLACK, WHITE, and PMS 432). Brand color is Pantone 432 C (`#333F48`). Light backgrounds throughout the app, with PMS 432 reserved for primary buttons, links, and brand surfaces. The app will live at `tasks.oucsda.org`, with DNS managed in Cloudflare and TLS issued by Vercel. See Section 11 for the full palette and logo usage rules.
+**Branding.** Logo assets received and stored in `C:\ouctasks\logos` (Block, Full, Reverse, and LogoTEXT variants in BLACK, WHITE, and PMS 432). Brand color is Pantone 432 C (`#333F48`). Light backgrounds throughout the app, with PMS 432 reserved for primary buttons, links, and brand surfaces. The app will live at `tasks.oucsda.org`, with DNS managed in Cloudflare and TLS issued by Vercel. See Section 11 for the full palette and logo usage rules.
 
 ## 9. Migration of Existing Data
 
