@@ -9,4 +9,36 @@
   --color-ouc-primary:        #333F48;
   --color-ouc-primary-hover:  #1F2830;
   --color-ouc-accent:         #3B7BD9;
-  --color-o
+  --color-ouc-bg:             #FFFFFF;
+  --color-ouc-surface:        #F7F8FA;
+  --color-ouc-surface-alt:    #EFF1F5;
+  --color-ouc-border:         #E2E5EA;
+  --color-ouc-text:           #1A1F25;
+  --color-ouc-text-muted:     #5C6773;
+
+  --color-status-not:         #8A94A6;
+  --color-status-prog:        #2563EB;
+  --color-status-blocked:     #DC2626;
+  --color-status-done:        #16A34A;
+
+  --color-cat-surveillance:   #3B7BD9;
+  --color-cat-access:         #0EA5A4;
+  --color-cat-av:             #8B5CF6;
+  --color-cat-cabling:        #F59E0B;
+  --color-cat-maintenance:    #10B981;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  --background: var(--color-ouc-surface);
+  --foreground: var(--color-ouc-text);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+}
