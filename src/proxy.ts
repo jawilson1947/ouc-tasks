@@ -1,20 +1,29 @@
 /**
- * Next.js proxy — TEMPORARY MINIMAL VERSION FOR VERCEL DIAGNOSTIC.
+ * Next.js proxy (formerly "middleware") — runs before every matching request.
+ * Delegates to the Supabase auth helper so sessions are kept fresh and
+ * unauthenticated users are redirected to /login.
  *
- * Original behavior delegated to Supabase auth helper for session refresh
- * and login redirect. We've stripped that out to isolate whether the proxy
- * itself is causing the 404s on Vercel. If the deployment serves /login
- * correctly with this no-op, we know the auth helper or matcher regex was
- * the problem and we can add it back surgically.
- *
- * See the prior version in git for the full implementation.
+ * Renamed from src/middleware.ts in Next 16, where the file convention
+ * changed from "middleware" to "proxy". See:
+ * https://nextjs.org/docs/messages/middleware-to-proxy
  */
-import { NextResponse, type NextRequest } from 'next/server';
+import { type NextRequest } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware';
 
-export function proxy(_request: NextRequest) {
-  return NextResponse.next();
+export async function proxy(request: NextRequest) {
+  return await updateSession(request);
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico
+     * - logos/ (public brand assets)
+     * - any path ending in a static image extension
+     */
+    '/((?!_next/static|_next/image|favicon.ico|logos|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+  ],
 };
