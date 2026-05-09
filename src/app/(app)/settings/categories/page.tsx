@@ -2,6 +2,7 @@
  * Settings › Categories — list all categories. Server Component.
  */
 import Link from 'next/link';
+import { DeleteButton } from '@/components/DeleteButton';
 import { createClient } from '@/lib/supabase/server';
 import { deleteCategory } from './actions';
 
@@ -122,20 +123,12 @@ export default async function CategoriesPage({
                       >
                         Edit
                       </Link>
-                      <form action={deleteCategory}>
-                        <input type="hidden" name="id" value={cat.id} />
-                        <button
-                          type="submit"
-                          id={`delete-category-${cat.id}`}
-                          onClick={(e) => {
-                            if (!confirm(`Delete "${cat.name}"? This cannot be undone.`))
-                              e.preventDefault();
-                          }}
-                          className="cursor-pointer rounded border border-red-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </form>
+                      <DeleteButton
+                        id={cat.id}
+                        label="Delete"
+                        confirmMessage={`Delete "${cat.name}"? This cannot be undone.`}
+                        action={deleteCategory}
+                      />
                     </div>
                   </td>
                 </tr>

@@ -4,6 +4,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { DeleteButton } from '@/components/DeleteButton';
 import { updateLocation, deleteLocation } from '../../actions';
 
 export const metadata = { title: 'Edit Location — OUC Infrastructure Tasks' };
@@ -72,40 +73,32 @@ export default async function EditLocationPage({
           />
         </label>
 
-        <div className="mt-6 flex items-center justify-between gap-2 border-t border-ouc-border pt-4">
-          {/* Delete */}
-          <form action={deleteLocation}>
-            <input type="hidden" name="id" value={loc.id} />
-            <button
-              type="submit"
-              id={`delete-location-${loc.id}`}
-              onClick={(e) => {
-                if (!confirm(`Delete "${loc.name}"? This cannot be undone.`))
-                  e.preventDefault();
-              }}
-              className="cursor-pointer rounded-md border border-red-200 bg-white px-4 py-2 text-[13px] font-semibold text-red-600 hover:bg-red-50"
-            >
-              Delete
-            </button>
-          </form>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href="/settings/locations"
-              className="rounded-md border border-ouc-border bg-white px-4 py-2 text-[13px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
-            >
-              Cancel
-            </Link>
-            <button
-              type="submit"
-              id="submit-edit-location"
-              className="cursor-pointer rounded-md bg-ouc-primary px-4 py-2 text-[13px] font-semibold text-white hover:bg-ouc-primary-hover"
-            >
-              Save Changes
-            </button>
-          </div>
+        <div className="mt-6 flex items-center justify-end gap-2 border-t border-ouc-border pt-4">
+          <Link
+            href="/settings/locations"
+            className="rounded-md border border-ouc-border bg-white px-4 py-2 text-[13px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
+          >
+            Cancel
+          </Link>
+          <button
+            type="submit"
+            id="submit-edit-location"
+            className="cursor-pointer rounded-md bg-ouc-primary px-4 py-2 text-[13px] font-semibold text-white hover:bg-ouc-primary-hover"
+          >
+            Save Changes
+          </button>
         </div>
       </form>
+
+      {/* Delete — must be outside the update form (no nested forms in HTML) */}
+      <div className="mt-3 max-w-lg">
+        <DeleteButton
+          id={loc.id}
+          label="Delete this location"
+          confirmMessage={`Delete "${loc.name}"? This cannot be undone.`}
+          action={deleteLocation}
+        />
+      </div>
     </div>
   );
 }

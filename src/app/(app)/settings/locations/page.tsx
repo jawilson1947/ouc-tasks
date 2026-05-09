@@ -2,6 +2,7 @@
  * Settings › Locations — list all locations. Server Component.
  */
 import Link from 'next/link';
+import { DeleteButton } from '@/components/DeleteButton';
 import { createClient } from '@/lib/supabase/server';
 import { deleteLocation } from './actions';
 
@@ -122,20 +123,12 @@ export default async function LocationsPage({
                       >
                         Edit
                       </Link>
-                      <form action={deleteLocation}>
-                        <input type="hidden" name="id" value={loc.id} />
-                        <button
-                          type="submit"
-                          id={`delete-location-${loc.id}`}
-                          onClick={(e) => {
-                            if (!confirm(`Delete "${loc.name}"? This cannot be undone.`))
-                              e.preventDefault();
-                          }}
-                          className="cursor-pointer rounded border border-red-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </form>
+                      <DeleteButton
+                        id={loc.id}
+                        label="Delete"
+                        confirmMessage={`Delete "${loc.name}"? This cannot be undone.`}
+                        action={deleteLocation}
+                      />
                     </div>
                   </td>
                 </tr>
