@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -66,11 +67,23 @@ function fmtUSD(n: number): string {
 }
 
 function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return '';
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+  });
+}
+
+/** Format a full ISO timestamp (created_at / updated_at). Returns '' for null. */
+function fmtTimestamp(iso: string | null): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   });
 }
 
@@ -249,66 +262,13 @@ export default async function TaskDetailPage({
               <div className="text-sm text-red-700">
                 Failed to load sub-tasks: {subErr.message}
               </div>
-            ) : !subtasks || subtasks.length === 0 ? (
-              <div className="text-sm text-ouc-text-muted">No sub-tasks.</div>
             ) : (
-              <>
-                <div className="flex flex-col">
-                  {subtasks.map((s, i) => {
-                    const cost = Number(s.labor_cost) + Number(s.equipment_cost);
-                    const done = s.status === 'done';
-                    const inProgress = s.status === 'in_progress';
-                    return (
-                      <div
-                        key={s.id}
-                        className={`grid grid-cols-[24px_1fr_100px_120px] items-center gap-3 rounded-md px-2 py-2.5 ${
-                          i > 0 ? 'border-t border-ouc-border' : ''
-                        } hover:bg-ouc-surface`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={done}
-                          readOnly
-                          aria-label={`Sub-task ${s.sequence} status`}
-                          className="h-4 w-4 accent-ouc-primary"
-                        />
-                        <div
-                          className={`text-[13.5px] ${
-                            done ? 'text-ouc-text-muted line-through' : 'text-ouc-text'
-                          }`}
-                        >
-                          {s.description}
-                        </div>
-                        <div className="text-right font-semibold tabular-nums">
-                          {cost > 0 ? fmtUSD(cost) : <span className="text-ouc-text-muted">—</span>}
-                        </div>
-                        <div
-                          className={`text-center text-[11.5px] font-semibold uppercase tracking-wider ${
-                            done
-                              ? 'text-status-done'
-                              : inProgress
-                                ? 'text-status-prog'
-                                : 'text-status-not'
-                          }`}
-                        >
-                          {STATUS_LABEL[s.status] ?? s.status}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-2 grid grid-cols-[24px_1fr_100px_120px] gap-3 border-t-2 border-ouc-border px-2 pt-3 text-[12.5px] text-ouc-text-muted">
-                  <div />
-                  <div>
-                    {subtasks.length} sub-task{subtasks.length === 1 ? '' : 's'}
-                    {task.subtask_done_count > 0 && ` · ${task.subtask_done_count} done`}
-                  </div>
-                  <div className="text-right text-sm font-bold tabular-nums text-ouc-primary">
-                    {fmtUSD(Number(task.total_cost))}
-                  </div>
-                  <div />
-                </div>
-              </>
+              <SubtaskDetailPanel
+                subtasks={subtasks ?? []}
+                taskId={task.id}
+                legacyId={task.legacy_id!}
+                totalCost={Number(task.total_cost)}
+              />
             )}
           </Card>
 
@@ -374,8 +334,12 @@ export default async function TaskDetailPage({
                   <span className="text-ouc-text-muted">In-house</span>
                 )}
               </DetailRow>
-              <DetailRow label="Created">{fmtDate(task.created_at)}</DetailRow>
-              <DetailRow label="Updated">{fmtDate(task.updated_at)}</DetailRow>
+              <DetailRow label="Created">
+                {fmtTimestamp(task.created_at) || <span className="text-ouc-text-muted">—</span>}
+              </DetailRow>
+              <DetailRow label="Updated">
+                {fmtTimestamp(task.updated_at) || <span className="text-ouc-text-muted">—</span>}
+              </DetailRow>
             </dl>
           </Card>
 

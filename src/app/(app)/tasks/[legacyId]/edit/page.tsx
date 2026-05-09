@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { TaskForm } from '@/components/TaskForm';
+import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { updateTask, deleteTask } from '../../actions';
 
 export async function generateMetadata({
@@ -67,6 +68,7 @@ export default async function EditTaskPage({
     { data: locations },
     { data: contractors },
     { data: users },
+    { data: subtasks },
   ] = await Promise.all([
     supabase.from('category').select('id, name').order('sort_order'),
     supabase.from('location').select('id, name').order('sort_order'),
@@ -76,6 +78,11 @@ export default async function EditTaskPage({
       .select('id, full_name, role, active')
       .in('role', ['admin', 'editor'])
       .order('full_name'),
+    supabase
+      .from('subtask')
+      .select('id, sequence, description, labor_cost, equipment_cost, status')
+      .eq('task_id', task.id)
+      .order('sequence'),
   ]);
 
   return (
@@ -121,6 +128,12 @@ export default async function EditTaskPage({
         submitLabel="Save changes"
         isEdit
         cancelHref={`/tasks/${legacyId}`}
+      />
+
+      <SubtaskEditor
+        subtasks={subtasks ?? []}
+        taskId={task.id}
+        legacyId={task.legacy_id!}
       />
     </div>
   );

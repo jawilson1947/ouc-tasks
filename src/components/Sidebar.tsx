@@ -16,17 +16,19 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: '/reports',     label: 'Reports',      icon: '📈' },
   { href: '/receipts',    label: 'Receipts',     icon: '📎' },
   { href: '/contractors', label: 'Contractors',  icon: '👥' },
-  { href: '/admin',       label: 'Admin',        icon: '⚙️' },
 ];
 
 const SETTINGS_NAV: { href: string; label: string }[] = [
-  { href: '/settings/locations',  label: 'Locations'  },
-  { href: '/settings/categories', label: 'Categories' },
+  { href: '/settings/locations',  label: 'Locations'        },
+  { href: '/settings/categories', label: 'Categories'       },
+  { href: '/admin/users',         label: 'User Management'  },
+  { href: '/admin',               label: 'Admin Dashboard'  },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const settingsActive = pathname.startsWith('/settings');
+  const settingsActive =
+    pathname.startsWith('/settings') || pathname.startsWith('/admin/users');
 
   return (
     <aside className="flex w-60 flex-col gap-1 bg-ouc-primary px-4 py-6 text-white">
