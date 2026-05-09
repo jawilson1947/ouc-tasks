@@ -19,8 +19,14 @@ const NAV: { href: string; label: string; icon: string }[] = [
   { href: '/admin',       label: 'Admin',        icon: '⚙️' },
 ];
 
+const SETTINGS_NAV: { href: string; label: string }[] = [
+  { href: '/settings/locations',  label: 'Locations'  },
+  { href: '/settings/categories', label: 'Categories' },
+];
+
 export function Sidebar() {
   const pathname = usePathname();
+  const settingsActive = pathname.startsWith('/settings');
 
   return (
     <aside className="flex w-60 flex-col gap-1 bg-ouc-primary px-4 py-6 text-white">
@@ -59,6 +65,40 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Settings group */}
+        <div className="mt-1">
+          <div
+            className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] transition-colors ${
+              settingsActive
+                ? 'bg-white/15 font-semibold text-white'
+                : 'text-white/85'
+            }`}
+          >
+            <span>🔧</span>
+            <span>Settings</span>
+          </div>
+          {/* Sub-items always visible; indent them */}
+          <div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-white/15 pl-3">
+            {SETTINGS_NAV.map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(item.href + '/');
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`rounded-lg px-2 py-1.5 text-[12.5px] transition-colors ${
+                    active
+                      ? 'font-semibold text-white'
+                      : 'text-white/75 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </nav>
 
       <div className="mt-auto border-t border-white/10 pt-4 text-xs text-white/65">
