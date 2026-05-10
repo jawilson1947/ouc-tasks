@@ -7,6 +7,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { fmtUSD } from '@/lib/format';
 import { STATUS_LABEL, STATUS_ORDER, STATUS_DOT } from '@/lib/task-display';
+import { ReportsExportBar } from '@/components/ReportsExportBar';
 
 export const metadata = { title: 'Reports — OUC Infrastructure Tasks' };
 
@@ -130,6 +131,53 @@ export default async function ReportsPage() {
 
   return (
     <div>
+      {/* Print-only CSS */}
+      <style>{`
+        @media print {
+          /* Hide nav chrome */
+          aside, nav, header, .no-print { display: none !important; }
+
+          /* Print header — hidden on screen */
+          .print-header { display: flex !important; }
+
+          /* Landscape */
+          html[data-print-orientation="landscape"] { }
+          html[data-print-orientation="landscape"] .report-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+          @page { margin: 1.5cm; }
+          html[data-print-orientation="landscape"] + * { }
+          html[data-print-orientation="landscape"] { }
+
+          /* Apply orientation via @page */
+          html[data-print-orientation="portrait"]  { }
+          html[data-print-orientation="portrait"]  .report-grid { grid-template-columns: 1fr; }
+
+          /* Force the @page size based on data attribute —
+             browsers respect the last matching @page rule */
+          @page { size: landscape; margin: 1.5cm; }
+        }
+
+        /* Override to portrait when that option is chosen */
+        @media print {
+          html[data-print-orientation="portrait"] * { }
+        }
+
+        /* Screen — hide the print header */
+        .print-header { display: none; }
+      `}</style>
+
+      {/* Print header — shown only in print output */}
+      <div className="print-header mb-6 items-center justify-between border-b border-gray-300 pb-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logos/ouc-full-pms432.png" alt="OUC" className="h-10 w-auto" />
+        <div className="text-right">
+          <div className="text-[15px] font-bold text-ouc-primary">Infrastructure Tasks — Reports</div>
+          <div className="text-[11px] text-ouc-text-muted">
+            Generated {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+          </div>
+        </div>
+      </div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="mb-1 text-2xl font-bold text-ouc-primary">Reports</h1>
@@ -138,27 +186,10 @@ export default async function ReportsPage() {
             <span className="font-semibold">{fmtUSD(grandTotal)}</span> total backlog
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled
-            title="PDF export — coming soon"
-            className="cursor-not-allowed rounded-lg border border-ouc-border bg-white px-3.5 py-2 text-[13.5px] font-medium text-ouc-text-muted opacity-60"
-          >
-            Export PDF
-          </button>
-          <button
-            type="button"
-            disabled
-            title="CSV export — coming soon"
-            className="cursor-not-allowed rounded-lg border border-ouc-border bg-white px-3.5 py-2 text-[13.5px] font-medium text-ouc-text-muted opacity-60"
-          >
-            Export CSV
-          </button>
-        </div>
+        <ReportsExportBar />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="report-grid grid grid-cols-1 gap-5 lg:grid-cols-2">
         <ReportCard title="Cost by Category" rows={categoryRows} grandTotal={grandTotal} />
         <ReportCard title="Cost by Priority" rows={priorityRows} grandTotal={grandTotal} />
         <ReportCard title="Status Distribution" rows={statusRows} grandTotal={grandTotal} />

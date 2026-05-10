@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
+import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -139,6 +140,7 @@ export default async function TaskDetailPage({
   const [
     { data: subtasks, error: subErr },
     { data: contractor },
+    { data: receipts },
   ] = await Promise.all([
     supabase
       .from('subtask')
@@ -152,6 +154,13 @@ export default async function TaskDetailPage({
           .eq('id', task.contractor_id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    supabase
+      .from('attachment')
+      .select('id, filename, vendor, receipt_amount, receipt_date, caption, storage_path, content_type, uploaded_at')
+      .eq('task_id', task.id)
+      .eq('type', 'receipt')
+      .order('receipt_date', { ascending: false, nullsFirst: false })
+      .order('uploaded_at', { ascending: false }),
   ]);
 
   const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
@@ -272,7 +281,13 @@ export default async function TaskDetailPage({
             )}
           </Card>
 
-          {/* TODO: Attachments (photos / receipts) — needs Supabase Storage wiring */}
+          {/* Receipts */}
+          <TaskReceiptsCard
+            receipts={(receipts ?? []) as any}
+            taskId={task.id}
+            legacyId={task.legacy_id!}
+          />
+
           {/* TODO: Comments + comment posting — needs Server Action */}
         </div>
 
