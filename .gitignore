@@ -41,4 +41,5 @@ supabase/.temp/
 
 # uploads / runtime artifacts that shouldn't ship
 /uploads/
-/tmp/
+/tmp/.claude/
+.claude/
