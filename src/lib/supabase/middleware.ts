@@ -12,7 +12,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/auth', '/_next', '/favicon.ico', '/logos'];
+const PUBLIC_PATHS = ['/login', '/auth', '/_next', '/favicon.ico', '/logos', '/api/debug'];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -44,10 +44,13 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
 
+  console.log(`[auth] path=${pathname} user=${user?.id ?? 'none'} public=${isPublic}`);
+
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('next', pathname);
+    console.log(`[auth] redirecting unauthenticated request → /login?next=${pathname}`);
     return NextResponse.redirect(url);
   }
 
