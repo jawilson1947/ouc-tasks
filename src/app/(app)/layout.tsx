@@ -40,7 +40,7 @@ export default async function AppLayout({
 
   return (
     <div className="grid min-h-screen grid-cols-[240px_1fr] bg-ouc-surface">
-      <Sidebar />
+      <Sidebar displayName={displayName} />
 
       <main className="flex min-w-0 flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-ouc-border bg-white px-7 py-3.5">
@@ -68,15 +68,23 @@ export default async function AppLayout({
             >
               + New Task
             </Link>
-            <form action="/auth/signout" method="post">
-              <button
-                type="submit"
-                title={`Sign out (${displayName})`}
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-ouc-accent text-xs font-semibold text-white"
+            <div className="flex items-center gap-2 border-l border-ouc-border pl-3">
+              <span
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-ouc-accent text-xs font-semibold text-white"
+                title={displayName}
               >
                 {initials}
-              </button>
-            </form>
+              </span>
+              <span className="text-[13px] font-medium text-ouc-text">{displayName}</span>
+              <form action="/auth/signout" method="post">
+                <button
+                  type="submit"
+                  className="cursor-pointer rounded-lg border border-ouc-border bg-white px-3 py-1.5 text-[12.5px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
+                >
+                  Log Off
+                </button>
+              </form>
+            </div>
           </div>
         </header>
 
