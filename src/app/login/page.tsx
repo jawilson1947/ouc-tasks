@@ -49,8 +49,10 @@ export default async function LoginPage({
               className="mb-3.5 max-h-[110px] w-auto"
               priority
             />
-            <div className="text-[13px] font-semibold uppercase tracking-[.08em] text-ouc-text-muted">
-              Infrastructure Tasks
+            <div className="text-center text-[13px] font-semibold uppercase tracking-[.08em] text-ouc-text-muted">
+              Infrastructure Task
+              <br />
+              Manager
             </div>
           </div>
 
