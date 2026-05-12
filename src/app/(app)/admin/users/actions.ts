@@ -166,6 +166,73 @@ export async function deleteUser(formData: FormData) {
   redirect('/admin/users?deleted=1');
 }
 
+export async function updateUserEmail(formData: FormData) {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    redirect(`/admin/users?error=${encodeURIComponent((e as Error).message)}`);
+  }
+
+  const targetId = String(formData.get('id') ?? '').trim();
+  const email    = String(formData.get('email') ?? '').trim().toLowerCase();
+
+  if (!targetId) redirect('/admin/users?error=missing-id');
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    redirect(`/admin/users/${targetId}/edit?error=${encodeURIComponent('Email looks invalid.')}`);
+  }
+
+  const admin = createAdminClient();
+
+  // Update auth.users — service-role skips the confirmation email flow.
+  const { error: authErr } = await admin.auth.admin.updateUserById(targetId, { email });
+  if (authErr) {
+    redirect(
+      `/admin/users/${targetId}/edit?error=${encodeURIComponent(authErr.message)}`
+    );
+  }
+
+  // Keep user_profile.email in sync.
+  const { error: profileErr } = await admin
+    .from('user_profile')
+    .update({ email })
+    .eq('id', targetId);
+  if (profileErr) {
+    redirect(
+      `/admin/users/${targetId}/edit?error=${encodeURIComponent(profileErr.message)}`
+    );
+  }
+
+  revalidatePath('/admin/users');
+  redirect(`/admin/users/${targetId}/edit?saved=email`);
+}
+
+export async function updateUserName(formData: FormData) {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    redirect(`/admin/users?error=${encodeURIComponent((e as Error).message)}`);
+  }
+
+  const targetId  = String(formData.get('id') ?? '').trim();
+  const full_name = String(formData.get('full_name') ?? '').trim();
+  const phone     = String(formData.get('phone') ?? '').trim() || null;
+
+  if (!targetId)   redirect('/admin/users?error=missing-id');
+  if (!full_name)  redirect(`/admin/users/${targetId}/edit?error=${encodeURIComponent('Name is required.')}`);
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from('user_profile')
+    .update({ full_name, phone })
+    .eq('id', targetId);
+  if (error) {
+    redirect(`/admin/users/${targetId}/edit?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath('/admin/users');
+  redirect(`/admin/users/${targetId}/edit?saved=profile`);
+}
+
 export async function updateRole(formData: FormData) {
   try {
     await requireAdmin();
