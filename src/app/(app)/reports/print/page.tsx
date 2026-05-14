@@ -113,15 +113,41 @@ function sortTasks(
   });
 }
 
+const VALID_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+type StatusVal = (typeof VALID_STATUSES)[number];
+
+const STATUS_LABEL_FULL: Record<string, string> = {
+  not_started: 'Not Started',
+  in_progress: 'In Progress',
+  blocked:     'Blocked',
+  done:        'Done',
+};
+
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    preview?: string;
+    sort?: string;
+    dir?: string;
+    status?: string;
+    priority?: string;
+    category?: string;
+    location?: string;
+  }>;
 }) {
-  const { preview, sort: sortRaw, dir: dirRaw } = await searchParams;
+  const { preview, sort: sortRaw, dir: dirRaw,
+          status: statusRaw, priority: priorityRaw,
+          category: categoryRaw, location: locationRaw } = await searchParams;
+
   const isPreview = preview === '1';
   const sort: SortKey = VALID_SORTS.includes(sortRaw as SortKey) ? (sortRaw as SortKey) : 'legacy_id';
   const dir: 'asc' | 'desc' = dirRaw === 'desc' ? 'desc' : 'asc';
+
+  const filterStatus   = VALID_STATUSES.includes(statusRaw as StatusVal) ? (statusRaw as StatusVal) : 'all';
+  const filterPriority = ['1','2','3','4','5'].includes(priorityRaw ?? '') ? Number(priorityRaw) : 'all';
+  const filterCategory = categoryRaw && categoryRaw !== 'all' ? Number(categoryRaw) : 'all';
+  const filterLocation = locationRaw && locationRaw !== 'all' ? Number(locationRaw) : 'all';
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -163,19 +189,30 @@ export default async function PrintReportPage({
     subMap.set(s.task_id, arr);
   }
 
-  const tasks: Task[] = sortTasks(
-    (tasksData ?? []).map((t) => ({
-      ...t,
-      total_labor_cost:     Number(t.total_labor_cost),
-      total_equipment_cost: Number(t.total_equipment_cost),
-      total_cost:           Number(t.total_cost),
-      subtasks:             subMap.get(t.id) ?? [],
-    })),
-    sort,
-    dir,
-    locMap,
-    catMap,
-  );
+  const allTasks = (tasksData ?? []).map((t) => ({
+    ...t,
+    total_labor_cost:     Number(t.total_labor_cost),
+    total_equipment_cost: Number(t.total_equipment_cost),
+    total_cost:           Number(t.total_cost),
+    subtasks:             subMap.get(t.id) ?? [],
+  }));
+
+  const filtered = allTasks.filter((t) => {
+    if (filterStatus   !== 'all' && t.status      !== filterStatus)   return false;
+    if (filterPriority !== 'all' && t.priority     !== filterPriority) return false;
+    if (filterCategory !== 'all' && t.category_id  !== filterCategory) return false;
+    if (filterLocation !== 'all' && t.location_id  !== filterLocation) return false;
+    return true;
+  });
+
+  const tasks: Task[] = sortTasks(filtered, sort, dir, locMap, catMap);
+
+  // Build a human-readable summary of active filters for the report header.
+  const activeFilters: string[] = [];
+  if (filterStatus   !== 'all') activeFilters.push(STATUS_LABEL_FULL[filterStatus] ?? filterStatus);
+  if (filterPriority !== 'all') activeFilters.push(`Priority ${filterPriority}`);
+  if (filterCategory !== 'all') activeFilters.push(catMap.get(filterCategory) ?? `Category ${filterCategory}`);
+  if (filterLocation !== 'all') activeFilters.push(locMap.get(filterLocation) ?? `Location ${filterLocation}`);
 
   const grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   const today      = new Date().toLocaleDateString('en-US',
@@ -238,8 +275,13 @@ export default async function PrintReportPage({
               OUC IT Infrastructure Task Report
             </div>
             <div className="mt-0.5 text-[12px] text-gray-600">
-              Generated {today} · {tasks.length} tasks · Grand Total: {usd(grandTotal)}
+              Generated {today} · {tasks.length} task{tasks.length === 1 ? '' : 's'} · Grand Total: {usd(grandTotal)}
             </div>
+            {activeFilters.length > 0 && (
+              <div className="mt-0.5 text-[11px] font-semibold text-gray-700">
+                Filtered: {activeFilters.join(' · ')}
+              </div>
+            )}
             <div className="mt-0.5 text-[11px] text-gray-400">
               Confidential — for internal use only · tasks.oucsda.org
             </div>
@@ -307,7 +349,16 @@ export default async function PrintReportPage({
         </div>
 
         {/* Screen-only controls */}
-        <PrintControlsClient sort={sort} dir={dir} />
+        <PrintControlsClient
+          sort={sort}
+          dir={dir}
+          filterStatus={filterStatus === 'all' ? 'all' : filterStatus}
+          filterPriority={filterPriority === 'all' ? 'all' : String(filterPriority)}
+          filterCategory={filterCategory === 'all' ? 'all' : String(filterCategory)}
+          filterLocation={filterLocation === 'all' ? 'all' : String(filterLocation)}
+          categories={(cats ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          locations={(locs ?? []).map((l) => ({ id: l.id, name: l.name }))}
+        />
       </div>
     </>
   );
