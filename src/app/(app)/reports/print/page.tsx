@@ -83,13 +83,44 @@ import PrintControlsClient from './PrintControlsClient';
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
+const VALID_SORTS = ['legacy_id', 'priority', 'status', 'location', 'category', 'cost'] as const;
+type SortKey = (typeof VALID_SORTS)[number];
+
+function sortTasks(
+  tasks: Task[],
+  sort: SortKey,
+  dir: 'asc' | 'desc',
+  locMap: Map<number, string>,
+  catMap: Map<number, string>,
+): Task[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...tasks].sort((a, b) => {
+    let cmp = 0;
+    switch (sort) {
+      case 'legacy_id': cmp = a.legacy_id - b.legacy_id; break;
+      case 'priority':  cmp = a.priority  - b.priority;  break;
+      case 'status':    cmp = a.status.localeCompare(b.status); break;
+      case 'location':
+        cmp = (locMap.get(a.location_id ?? 0) ?? '').localeCompare(locMap.get(b.location_id ?? 0) ?? '');
+        break;
+      case 'category':
+        cmp = (catMap.get(a.category_id ?? 0) ?? '').localeCompare(catMap.get(b.category_id ?? 0) ?? '');
+        break;
+      case 'cost': cmp = a.total_cost - b.total_cost; break;
+    }
+    return cmp * sign;
+  });
+}
+
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string }>;
+  searchParams: Promise<{ preview?: string; sort?: string; dir?: string }>;
 }) {
-  const { preview } = await searchParams;
-  const isPreview   = preview === '1';
+  const { preview, sort: sortRaw, dir: dirRaw } = await searchParams;
+  const isPreview = preview === '1';
+  const sort: SortKey = VALID_SORTS.includes(sortRaw as SortKey) ? (sortRaw as SortKey) : 'legacy_id';
+  const dir: 'asc' | 'desc' = dirRaw === 'desc' ? 'desc' : 'asc';
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -131,13 +162,19 @@ export default async function PrintReportPage({
     subMap.set(s.task_id, arr);
   }
 
-  const tasks: Task[] = (tasksData ?? []).map((t) => ({
-    ...t,
-    total_labor_cost:     Number(t.total_labor_cost),
-    total_equipment_cost: Number(t.total_equipment_cost),
-    total_cost:           Number(t.total_cost),
-    subtasks:             subMap.get(t.id) ?? [],
-  }));
+  const tasks: Task[] = sortTasks(
+    (tasksData ?? []).map((t) => ({
+      ...t,
+      total_labor_cost:     Number(t.total_labor_cost),
+      total_equipment_cost: Number(t.total_equipment_cost),
+      total_cost:           Number(t.total_cost),
+      subtasks:             subMap.get(t.id) ?? [],
+    })),
+    sort,
+    dir,
+    locMap,
+    catMap,
+  );
 
   const grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   const today      = new Date().toLocaleDateString('en-US',
@@ -246,7 +283,7 @@ export default async function PrintReportPage({
         </div>
 
         {/* Screen-only controls */}
-        <PrintControlsClient />
+        <PrintControlsClient sort={sort} dir={dir} />
       </div>
     </>
   );
