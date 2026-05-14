@@ -79,6 +79,7 @@ function fmtDate(iso: string | null) {
 // ---------------------------------------------------------------------------
 import AutoPrintClient from './AutoPrintClient';
 import PrintControlsClient from './PrintControlsClient';
+import PageNumberClient from './PageNumberClient';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -188,29 +189,41 @@ export default async function PrintReportPage({
       {/* Auto-print (suppressed in preview mode) */}
       <AutoPrintClient preview={isPreview} />
 
-      {/* Global print styles — portrait, page numbers via CSS margin boxes */}
+      {/* Global print styles — portrait, fixed footer for page numbers */}
       <style>{`
-        @page {
-          size: letter portrait;
-          margin: 1.5cm 1.2cm 2cm 1.2cm;
-        }
-        @page {
-          @bottom-center {
-            content: "Page " counter(page) " of " counter(pages);
-            font-size: 9pt;
-            color: #888;
-            font-family: 'Times New Roman', Times, serif;
-          }
-        }
+        @page { size: letter portrait; margin: 1.5cm 1.2cm 2cm 1.2cm; }
         @media print {
           aside, nav, header, .no-print { display: none !important; }
           body { font-family: 'Times New Roman', Times, serif; }
           .page-break-avoid { page-break-inside: avoid; }
+          .print-page-footer {
+            display: flex !important;
+            position: fixed;
+            bottom: 0.6cm;
+            left: 1.2cm;
+            right: 1.2cm;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 8pt;
+            color: #aaa;
+            border-top: 1px solid #ddd;
+            padding-top: 3pt;
+            font-family: 'Times New Roman', Times, serif;
+          }
         }
         body { font-family: 'Times New Roman', Times, serif; background: white; }
+        .print-page-footer { display: none; }
       `}</style>
 
-      <div className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
+      {/* Page number footer — position:fixed repeats on every printed page */}
+      <div className="print-page-footer">
+        <span>Oakwood University Church — Confidential</span>
+        <span>Page <span className="page-total">—</span></span>
+      </div>
+
+      <PageNumberClient />
+
+      <div id="print-content" className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
 
         {/* ── Report Header ── */}
         <div className="mb-6 flex items-start justify-between border-b-2 border-gray-800 pb-4">
