@@ -214,22 +214,30 @@ export default async function UsersAdminPage({
                       )}
                     </Td>
                     <Td align="right">
-                      {isMe ? (
-                        <span className="text-[11.5px] italic text-ouc-text-muted">
-                          (yourself)
-                        </span>
-                      ) : (
-                        <form action={deleteUser} className="inline-block">
-                          <input type="hidden" name="id" value={u.id} />
-                          <button
-                            type="submit"
-                            className="cursor-pointer rounded border border-red-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-red-700 hover:bg-red-50"
-                            title={`Delete ${u.full_name}`}
-                          >
-                            Delete
-                          </button>
-                        </form>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <Link
+                          href={`/admin/users/${u.id}/edit`}
+                          className="rounded border border-ouc-border bg-white px-2 py-0.5 text-[11.5px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
+                        >
+                          Edit
+                        </Link>
+                        {isMe ? (
+                          <span className="text-[11.5px] italic text-ouc-text-muted">
+                            (yourself)
+                          </span>
+                        ) : (
+                          <form action={deleteUser} className="inline-block">
+                            <input type="hidden" name="id" value={u.id} />
+                            <button
+                              type="submit"
+                              className="cursor-pointer rounded border border-red-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-red-700 hover:bg-red-50"
+                              title={`Delete ${u.full_name}`}
+                            >
+                              Delete
+                            </button>
+                          </form>
+                        )}
+                      </div>
                     </Td>
                   </tr>
                 );

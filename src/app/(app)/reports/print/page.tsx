@@ -79,17 +79,75 @@ function fmtDate(iso: string | null) {
 // ---------------------------------------------------------------------------
 import AutoPrintClient from './AutoPrintClient';
 import PrintControlsClient from './PrintControlsClient';
+import PageNumberClient from './PageNumberClient';
 
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
+const VALID_SORTS = ['legacy_id', 'priority', 'status', 'location', 'category', 'cost'] as const;
+type SortKey = (typeof VALID_SORTS)[number];
+
+function sortTasks(
+  tasks: Task[],
+  sort: SortKey,
+  dir: 'asc' | 'desc',
+  locMap: Map<number, string>,
+  catMap: Map<number, string>,
+): Task[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...tasks].sort((a, b) => {
+    let cmp = 0;
+    switch (sort) {
+      case 'legacy_id': cmp = a.legacy_id - b.legacy_id; break;
+      case 'priority':  cmp = a.priority  - b.priority;  break;
+      case 'status':    cmp = a.status.localeCompare(b.status); break;
+      case 'location':
+        cmp = (locMap.get(a.location_id ?? 0) ?? '').localeCompare(locMap.get(b.location_id ?? 0) ?? '');
+        break;
+      case 'category':
+        cmp = (catMap.get(a.category_id ?? 0) ?? '').localeCompare(catMap.get(b.category_id ?? 0) ?? '');
+        break;
+      case 'cost': cmp = a.total_cost - b.total_cost; break;
+    }
+    return cmp * sign;
+  });
+}
+
+const VALID_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+type StatusVal = (typeof VALID_STATUSES)[number];
+
+const STATUS_LABEL_FULL: Record<string, string> = {
+  not_started: 'Not Started',
+  in_progress: 'In Progress',
+  blocked:     'Blocked',
+  done:        'Done',
+};
+
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string }>;
+  searchParams: Promise<{
+    preview?: string;
+    sort?: string;
+    dir?: string;
+    status?: string;
+    priority?: string;
+    category?: string;
+    location?: string;
+  }>;
 }) {
-  const { preview } = await searchParams;
-  const isPreview   = preview === '1';
+  const { preview, sort: sortRaw, dir: dirRaw,
+          status: statusRaw, priority: priorityRaw,
+          category: categoryRaw, location: locationRaw } = await searchParams;
+
+  const isPreview = preview === '1';
+  const sort: SortKey = VALID_SORTS.includes(sortRaw as SortKey) ? (sortRaw as SortKey) : 'legacy_id';
+  const dir: 'asc' | 'desc' = dirRaw === 'desc' ? 'desc' : 'asc';
+
+  const filterStatus   = VALID_STATUSES.includes(statusRaw as StatusVal) ? (statusRaw as StatusVal) : 'all';
+  const filterPriority = ['1','2','3','4','5'].includes(priorityRaw ?? '') ? Number(priorityRaw) : 'all';
+  const filterCategory = categoryRaw && categoryRaw !== 'all' ? Number(categoryRaw) : 'all';
+  const filterLocation = locationRaw && locationRaw !== 'all' ? Number(locationRaw) : 'all';
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -131,13 +189,30 @@ export default async function PrintReportPage({
     subMap.set(s.task_id, arr);
   }
 
-  const tasks: Task[] = (tasksData ?? []).map((t) => ({
+  const allTasks = (tasksData ?? []).map((t) => ({
     ...t,
     total_labor_cost:     Number(t.total_labor_cost),
     total_equipment_cost: Number(t.total_equipment_cost),
     total_cost:           Number(t.total_cost),
     subtasks:             subMap.get(t.id) ?? [],
   }));
+
+  const filtered = allTasks.filter((t) => {
+    if (filterStatus   !== 'all' && t.status      !== filterStatus)   return false;
+    if (filterPriority !== 'all' && t.priority     !== filterPriority) return false;
+    if (filterCategory !== 'all' && t.category_id  !== filterCategory) return false;
+    if (filterLocation !== 'all' && t.location_id  !== filterLocation) return false;
+    return true;
+  });
+
+  const tasks: Task[] = sortTasks(filtered, sort, dir, locMap, catMap);
+
+  // Build a human-readable summary of active filters for the report header.
+  const activeFilters: string[] = [];
+  if (filterStatus   !== 'all') activeFilters.push(STATUS_LABEL_FULL[filterStatus] ?? filterStatus);
+  if (filterPriority !== 'all') activeFilters.push(`Priority ${filterPriority}`);
+  if (filterCategory !== 'all') activeFilters.push(catMap.get(filterCategory) ?? `Category ${filterCategory}`);
+  if (filterLocation !== 'all') activeFilters.push(locMap.get(filterLocation) ?? `Location ${filterLocation}`);
 
   const grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   const today      = new Date().toLocaleDateString('en-US',
@@ -151,18 +226,41 @@ export default async function PrintReportPage({
       {/* Auto-print (suppressed in preview mode) */}
       <AutoPrintClient preview={isPreview} />
 
-      {/* Global print styles — sets landscape, hides browser chrome */}
+      {/* Global print styles — portrait, fixed footer for page numbers */}
       <style>{`
-        @page { size: letter landscape; margin: 1.5cm 1.2cm; }
+        @page { size: letter portrait; margin: 1.5cm 1.2cm 2cm 1.2cm; }
         @media print {
           aside, nav, header, .no-print { display: none !important; }
           body { font-family: 'Times New Roman', Times, serif; }
           .page-break-avoid { page-break-inside: avoid; }
+          .print-page-footer {
+            display: flex !important;
+            position: fixed;
+            bottom: 0.6cm;
+            left: 1.2cm;
+            right: 1.2cm;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 8pt;
+            color: #aaa;
+            border-top: 1px solid #ddd;
+            padding-top: 3pt;
+            font-family: 'Times New Roman', Times, serif;
+          }
         }
         body { font-family: 'Times New Roman', Times, serif; background: white; }
+        .print-page-footer { display: none; }
       `}</style>
 
-      <div className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
+      {/* Page number footer — position:fixed repeats on every printed page */}
+      <div className="print-page-footer">
+        <span>Oakwood University Church — Confidential</span>
+        <span>Page <span className="page-total">—</span></span>
+      </div>
+
+      <PageNumberClient />
+
+      <div id="print-content" className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
 
         {/* ── Report Header ── */}
         <div className="mb-6 flex items-start justify-between border-b-2 border-gray-800 pb-4">
@@ -177,8 +275,13 @@ export default async function PrintReportPage({
               OUC IT Infrastructure Task Report
             </div>
             <div className="mt-0.5 text-[12px] text-gray-600">
-              Generated {today} · {tasks.length} tasks · Grand Total: {usd(grandTotal)}
+              Generated {today} · {tasks.length} task{tasks.length === 1 ? '' : 's'} · Grand Total: {usd(grandTotal)}
             </div>
+            {activeFilters.length > 0 && (
+              <div className="mt-0.5 text-[11px] font-semibold text-gray-700">
+                Filtered: {activeFilters.join(' · ')}
+              </div>
+            )}
             <div className="mt-0.5 text-[11px] text-gray-400">
               Confidential — for internal use only · tasks.oucsda.org
             </div>
@@ -246,7 +349,16 @@ export default async function PrintReportPage({
         </div>
 
         {/* Screen-only controls */}
-        <PrintControlsClient />
+        <PrintControlsClient
+          sort={sort}
+          dir={dir}
+          filterStatus={filterStatus === 'all' ? 'all' : filterStatus}
+          filterPriority={filterPriority === 'all' ? 'all' : String(filterPriority)}
+          filterCategory={filterCategory === 'all' ? 'all' : String(filterCategory)}
+          filterLocation={filterLocation === 'all' ? 'all' : String(filterLocation)}
+          categories={(cats ?? []).map((c) => ({ id: c.id, name: c.name }))}
+          locations={(locs ?? []).map((l) => ({ id: l.id, name: l.name }))}
+        />
       </div>
     </>
   );

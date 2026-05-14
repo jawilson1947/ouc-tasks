@@ -107,7 +107,12 @@ export function Sidebar({ displayName }: { displayName?: string }) {
         {displayName && (
           <div className="mb-3 px-2 text-[12px] text-white/70">
             Signed in as
-            <div className="mt-0.5 truncate font-semibold text-white/90">{displayName}</div>
+            <Link
+              href="/profile"
+              className="mt-0.5 block truncate font-semibold text-white/90 hover:text-white hover:underline"
+            >
+              {displayName}
+            </Link>
           </div>
         )}
         <form action="/auth/signout" method="post">
