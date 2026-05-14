@@ -188,9 +188,20 @@ export default async function PrintReportPage({
       {/* Auto-print (suppressed in preview mode) */}
       <AutoPrintClient preview={isPreview} />
 
-      {/* Global print styles — sets landscape, hides browser chrome */}
+      {/* Global print styles — portrait, page numbers via CSS margin boxes */}
       <style>{`
-        @page { size: letter landscape; margin: 1.5cm 1.2cm; }
+        @page {
+          size: letter portrait;
+          margin: 1.5cm 1.2cm 2cm 1.2cm;
+        }
+        @page {
+          @bottom-center {
+            content: "Page " counter(page) " of " counter(pages);
+            font-size: 9pt;
+            color: #888;
+            font-family: 'Times New Roman', Times, serif;
+          }
+        }
         @media print {
           aside, nav, header, .no-print { display: none !important; }
           body { font-family: 'Times New Roman', Times, serif; }
