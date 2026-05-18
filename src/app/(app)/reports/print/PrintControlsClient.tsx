@@ -20,29 +20,21 @@ export default function PrintControlsClient({
   reportReady: boolean;
 }) {
   const router = useRouter();
-  const [selected, setSelected] = useState<Set<string>>(new Set(activeStatuses));
-
-  function toggle(value: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(value) ? next.delete(value) : next.add(value);
-      return next;
-    });
-  }
+  const [selected, setSelected] = useState<string>(activeStatuses[0] ?? '');
 
   function generate() {
     const params = new URLSearchParams();
     if (isPreview) params.set('preview', '1');
-    params.set('status', [...selected].join(','));
+    params.set('status', selected);
     router.push(`/reports/print?${params.toString()}`);
   }
 
   function clearFilter() {
-    setSelected(new Set());
+    setSelected('');
     router.push(`/reports/print${isPreview ? '?preview=1' : ''}`);
   }
 
-  const canGenerate = selected.size > 0;
+  const canGenerate = selected !== '';
 
   return (
     <div className="no-print mb-6">
@@ -53,29 +45,28 @@ export default function PrintControlsClient({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {STATUSES.map((s) => {
-          const checked = selected.has(s.value);
-          return (
-            <label
-              key={s.value}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors select-none ${
-                checked
-                  ? 'border-gray-800 bg-gray-800 text-white'
-                  : 'border-gray-300 bg-white text-gray-600 hover:border-gray-500'
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={checked}
-                onChange={() => toggle(s.value)}
-              />
-              {s.label}
-            </label>
-          );
-        })}
+        {STATUSES.map((s) => (
+          <label
+            key={s.value}
+            className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors select-none ${
+              selected === s.value
+                ? 'border-gray-800 bg-gray-800 text-white'
+                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-500'
+            }`}
+          >
+            <input
+              type="radio"
+              name="status-filter"
+              className="sr-only"
+              value={s.value}
+              checked={selected === s.value}
+              onChange={() => setSelected(s.value)}
+            />
+            {s.label}
+          </label>
+        ))}
 
-        {selected.size > 0 && (
+        {selected !== '' && (
           <button
             type="button"
             onClick={clearFilter}
