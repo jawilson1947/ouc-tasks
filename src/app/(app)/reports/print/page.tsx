@@ -83,65 +83,83 @@ import PrintControlsClient from './PrintControlsClient';
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
+const ALL_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string }>;
+  searchParams: Promise<{ preview?: string; status?: string }>;
 }) {
-  const { preview } = await searchParams;
-  const isPreview   = preview === '1';
+  const { preview, status: statusParam } = await searchParams;
+  const isPreview = preview === '1';
+
+  const activeStatuses: string[] = statusParam
+    ? statusParam.split(',').filter((s) => ALL_STATUSES.includes(s as typeof ALL_STATUSES[number]))
+    : [];
+  const reportReady = activeStatuses.length > 0;
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login?next=/reports/print');
 
-  // Fetch everything in parallel
-  const [
-    { data: tasksData },
-    { data: subtasksData },
-    { data: cats },
-    { data: locs },
-    { data: users },
-    { data: contractors },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost')
-      .order('legacy_id'),
-    supabase
-      .from('subtask')
-      .select('id, task_id, sequence, description, labor_cost, equipment_cost, status')
-      .order('sequence'),
-    supabase.from('category').select('id, name'),
-    supabase.from('location').select('id, name'),
-    supabase.from('user_profile').select('id, full_name'),
-    supabase.from('contractor').select('id, business_name'),
-  ]);
+  // Only fetch data once the user has chosen statuses
+  let tasks: Task[] = [];
+  let locMap = new Map<number, string>();
+  let userMap = new Map<string, string>();
+  let conMap = new Map<string, string>();
+  let grandTotal = 0;
 
-  const catMap  = new Map((cats  ?? []).map((c) => [c.id, c.name]));
-  const locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
-  const userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
-  const conMap  = new Map((contractors ?? []).map((c) => [c.id, c.business_name]));
+  if (reportReady) {
+    const [
+      { data: tasksData },
+      { data: subtasksData },
+      { data: locs },
+      { data: users },
+      { data: contractors },
+    ] = await Promise.all([
+      supabase
+        .from('task_with_totals')
+        .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost')
+        .in('status', activeStatuses)
+        .order('legacy_id'),
+      supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
+      supabase.from('location').select('id, name'),
+      supabase.from('user_profile').select('id, full_name'),
+      supabase.from('contractor').select('id, business_name'),
+    ]);
 
-  // Group subtasks by task_id
-  const subMap = new Map<string, Subtask[]>();
-  for (const s of (subtasksData ?? [])) {
-    const arr = subMap.get(s.task_id) ?? [];
-    arr.push(s as Subtask);
-    subMap.set(s.task_id, arr);
+    locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
+    userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
+    conMap  = new Map((contractors ?? []).map((c) => [c.id, c.business_name]));
+
+    const subMap = new Map<string, Subtask[]>();
+    for (const s of (subtasksData ?? [])) {
+      const arr = subMap.get(s.task_id) ?? [];
+      arr.push(s as Subtask);
+      subMap.set(s.task_id, arr);
+    }
+
+    tasks = (tasksData ?? []).map((t) => ({
+      ...t,
+      total_labor_cost:     Number(t.total_labor_cost),
+      total_equipment_cost: Number(t.total_equipment_cost),
+      total_cost:           Number(t.total_cost),
+      subtasks:             subMap.get(t.id) ?? [],
+    }));
+
+    grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   }
 
-  const tasks: Task[] = (tasksData ?? []).map((t) => ({
-    ...t,
-    total_labor_cost:     Number(t.total_labor_cost),
-    total_equipment_cost: Number(t.total_equipment_cost),
-    total_cost:           Number(t.total_cost),
-    subtasks:             subMap.get(t.id) ?? [],
-  }));
-
-  const grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
-  const today      = new Date().toLocaleDateString('en-US',
+  const today = new Date().toLocaleDateString('en-US',
     { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const STATUS_LABEL_FULL: Record<string, string> = {
+    not_started: 'Not Started',
+    in_progress: 'In Progress',
+    blocked:     'Blocked',
+    done:        'Done',
+  };
+  const filterLabel = activeStatuses.map((s) => STATUS_LABEL_FULL[s] ?? s).join(', ');
 
   // ---------------------------------------------------------------------------
   // Render
@@ -164,6 +182,12 @@ export default async function PrintReportPage({
 
       <div className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
 
+        {/* Filter controls — always visible on screen */}
+        <PrintControlsClient activeStatuses={activeStatuses} isPreview={isPreview} reportReady={reportReady} />
+
+        {/* ── Report (only shown once statuses are selected) ── */}
+        {reportReady && (<>
+
         {/* ── Report Header ── */}
         <div className="mb-6 flex items-start justify-between border-b-2 border-gray-800 pb-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -177,8 +201,11 @@ export default async function PrintReportPage({
               OUC IT Infrastructure Task Report
             </div>
             <div className="mt-0.5 text-[12px] text-gray-600">
-              Generated {today} · {tasks.length} tasks · Grand Total: {usd(grandTotal)}
+              Generated {today} · {tasks.length} task{tasks.length === 1 ? '' : 's'} · Grand Total: {usd(grandTotal)}
             </div>
+            {activeStatuses.length > 0 && (
+              <div className="mt-0.5 text-[11px] text-gray-500 italic">{filterLabel}</div>
+            )}
             <div className="mt-0.5 text-[11px] text-gray-400">
               Confidential — for internal use only · tasks.oucsda.org
             </div>
@@ -245,8 +272,7 @@ export default async function PrintReportPage({
           Oakwood University Church — tasks.oucsda.org — Confidential
         </div>
 
-        {/* Screen-only controls */}
-        <PrintControlsClient />
+        </>)}
       </div>
     </>
   );

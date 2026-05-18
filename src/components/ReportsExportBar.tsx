@@ -131,7 +131,7 @@ export function ReportsExportBar() {
 
   function handlePDF(type: PdfType) {
     if (type === 'formal') {
-      window.open('/reports/print', '_blank', 'noopener,noreferrer');
+      window.open('/reports/print?preview=1', '_blank', 'noopener,noreferrer');
       return;
     }
     // Set orientation on the root element — picked up by @media print CSS

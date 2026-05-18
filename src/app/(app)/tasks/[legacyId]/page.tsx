@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
+import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -141,6 +142,7 @@ export default async function TaskDetailPage({
     { data: subtasks, error: subErr },
     { data: contractor },
     { data: receipts },
+    { data: photos },
   ] = await Promise.all([
     supabase
       .from('subtask')
@@ -160,6 +162,12 @@ export default async function TaskDetailPage({
       .eq('task_id', task.id)
       .eq('type', 'receipt')
       .order('receipt_date', { ascending: false, nullsFirst: false })
+      .order('uploaded_at', { ascending: false }),
+    supabase
+      .from('attachment')
+      .select('id, filename, caption, storage_path, content_type, uploaded_at')
+      .eq('task_id', task.id)
+      .eq('type', 'photo')
       .order('uploaded_at', { ascending: false }),
   ]);
 
@@ -280,6 +288,13 @@ export default async function TaskDetailPage({
               />
             )}
           </Card>
+
+          {/* Photos */}
+          <TaskPhotosCard
+            photos={(photos ?? []) as any}
+            taskId={task.id}
+            legacyId={task.legacy_id!}
+          />
 
           {/* Receipts */}
           <TaskReceiptsCard
