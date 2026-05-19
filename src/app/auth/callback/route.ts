@@ -18,10 +18,16 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       console.error('[auth/callback] code exchange failed:', error.message);
       return NextResponse.redirect(`${origin}/login?error=invalid`);
+    }
+    if (data.user) {
+      await supabase
+        .from('user_profile')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', data.user.id);
     }
   }
 

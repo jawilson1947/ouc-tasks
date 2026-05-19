@@ -24,12 +24,17 @@ export async function signIn(formData: FormData) {
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    // Don't leak which factor failed — Supabase returns "Invalid login credentials"
-    // for both wrong-email and wrong-password by design. Pass it through.
     redirect(`/login?error=invalid&next=${encodeURIComponent(next)}`);
+  }
+
+  if (data.user) {
+    await supabase
+      .from('user_profile')
+      .update({ last_login: new Date().toISOString() })
+      .eq('id', data.user.id);
   }
 
   redirect(next);

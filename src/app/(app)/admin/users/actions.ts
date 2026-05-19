@@ -166,6 +166,59 @@ export async function deleteUser(formData: FormData) {
   redirect('/admin/users?deleted=1');
 }
 
+export type UpdateUserState = {
+  ok: boolean;
+  error?: string;
+};
+
+export async function updateUser(
+  _prev: UpdateUserState,
+  formData: FormData
+): Promise<UpdateUserState> {
+  try {
+    await requireAdmin();
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+
+  const targetId  = String(formData.get('id')        ?? '').trim();
+  const firstName = String(formData.get('firstName') ?? '').trim();
+  const lastName  = String(formData.get('lastName')  ?? '').trim();
+  const email     = String(formData.get('email')     ?? '').trim().toLowerCase();
+  const role      = String(formData.get('role')      ?? '');
+  const active    = formData.get('active') === 'true';
+
+  if (!targetId)  return { ok: false, error: 'Missing user id.' };
+  if (!firstName) return { ok: false, error: 'First name is required.' };
+  if (!lastName)  return { ok: false, error: 'Last name is required.' };
+  if (!email)     return { ok: false, error: 'Email is required.' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { ok: false, error: 'Email looks invalid.' };
+  }
+  if (!VALID_ROLES.includes(role as Role)) {
+    return { ok: false, error: 'Pick a valid role.' };
+  }
+
+  const fullName = `${firstName} ${lastName}`;
+  const admin = createAdminClient();
+
+  const { error: authErr } = await admin.auth.admin.updateUserById(targetId, {
+    email,
+    user_metadata: { full_name: fullName, first_name: firstName, last_name: lastName },
+  });
+  if (authErr) return { ok: false, error: authErr.message };
+
+  const { error: profileErr } = await admin
+    .from('user_profile')
+    .update({ full_name: fullName, email, role, active })
+    .eq('id', targetId);
+  if (profileErr) return { ok: false, error: profileErr.message };
+
+  revalidatePath('/admin/users');
+  revalidatePath('/admin');
+  return { ok: true };
+}
+
 export async function updateRole(formData: FormData) {
   try {
     await requireAdmin();

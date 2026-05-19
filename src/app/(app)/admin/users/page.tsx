@@ -7,17 +7,10 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { fmtDateLong } from '@/lib/format';
 import { NewUserForm } from './NewUserForm';
-import { deleteUser, updateRole } from './actions';
+import { UserTableClient } from './UserTableClient';
 
 export const metadata = { title: 'Users — Admin — OUC Infrastructure Tasks' };
-
-const ROLE_BADGE: Record<string, string> = {
-  admin:  'bg-ouc-primary/12 text-ouc-primary',
-  editor: 'bg-cat-access/12 text-cat-access',
-  viewer: 'bg-ouc-surface-alt text-ouc-text-muted',
-};
 
 const FLASH_ERROR_MESSAGES: Record<string, string> = {
   'missing-id':         'Missing user id.',
@@ -146,136 +139,10 @@ export default async function UsersAdminPage({
             No users yet. Add the first one with the form above.
           </div>
         ) : (
-          <table className="w-full border-collapse text-[13px]">
-            <thead>
-              <tr>
-                <Th>Name</Th>
-                <Th>Email</Th>
-                <Th>Role</Th>
-                <Th>Created</Th>
-                <Th>Last login</Th>
-                <Th>Status</Th>
-                <Th align="right">Actions</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => {
-                const isMe = u.id === user.id;
-                return (
-                  <tr key={u.id} className="border-b border-ouc-border last:border-b-0 align-middle">
-                    <Td className="font-semibold text-ouc-text">
-                      {u.full_name}
-                      {isMe && (
-                        <span className="ml-2 rounded-full bg-ouc-surface-alt px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-ouc-text-muted">
-                          You
-                        </span>
-                      )}
-                    </Td>
-                    <Td>
-                      <a href={`mailto:${u.email}`} className="text-ouc-accent hover:underline">
-                        {u.email}
-                      </a>
-                    </Td>
-                    <Td>
-                      <form action={updateRole} className="flex items-center gap-1.5">
-                        <input type="hidden" name="id" value={u.id} />
-                        <select
-                          name="role"
-                          defaultValue={u.role}
-                          className={`rounded-full border-0 px-2 py-0.5 text-[11.5px] font-semibold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-ouc-accent/30 ${
-                            ROLE_BADGE[u.role] ?? 'bg-ouc-surface-alt text-ouc-text-muted'
-                          }`}
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="editor">Editor</option>
-                          <option value="viewer">Viewer</option>
-                          {!['admin', 'editor', 'viewer'].includes(u.role) && (
-                            <option value={u.role}>{u.role} (legacy)</option>
-                          )}
-                        </select>
-                        <button
-                          type="submit"
-                          className="cursor-pointer rounded border border-ouc-border bg-white px-1.5 py-0.5 text-[11px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
-                          title="Save role change"
-                        >
-                          Save
-                        </button>
-                      </form>
-                    </Td>
-                    <Td className="text-ouc-text-muted">{fmtDateLong(u.created_at)}</Td>
-                    <Td className="text-ouc-text-muted">
-                      {u.last_login ? fmtDateLong(u.last_login) : 'Never'}
-                    </Td>
-                    <Td>
-                      {u.active ? (
-                        <span className="text-status-done">Active</span>
-                      ) : (
-                        <span className="text-ouc-text-muted">Inactive</span>
-                      )}
-                    </Td>
-                    <Td align="right">
-                      {isMe ? (
-                        <span className="text-[11.5px] italic text-ouc-text-muted">
-                          (yourself)
-                        </span>
-                      ) : (
-                        <form action={deleteUser} className="inline-block">
-                          <input type="hidden" name="id" value={u.id} />
-                          <button
-                            type="submit"
-                            className="cursor-pointer rounded border border-red-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-red-700 hover:bg-red-50"
-                            title={`Delete ${u.full_name}`}
-                          >
-                            Delete
-                          </button>
-                        </form>
-                      )}
-                    </Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <UserTableClient users={users} currentUserId={user.id} />
         )}
       </section>
     </div>
   );
 }
 
-function Th({
-  children,
-  align = 'left',
-}: {
-  children: React.ReactNode;
-  align?: 'left' | 'right';
-}) {
-  return (
-    <th
-      className={`border-b border-ouc-border px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wider text-ouc-text-muted ${
-        align === 'right' ? 'text-right' : 'text-left'
-      }`}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  className = '',
-  align = 'left',
-}: {
-  children: React.ReactNode;
-  className?: string;
-  align?: 'left' | 'right';
-}) {
-  return (
-    <td
-      className={`px-2.5 py-2.5 align-middle ${
-        align === 'right' ? 'text-right' : 'text-left'
-      } ${className}`}
-    >
-      {children}
-    </td>
-  );
-}
