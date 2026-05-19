@@ -6,6 +6,7 @@ import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
+import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { updateTask, deleteTask } from '../../actions';
 
 export async function generateMetadata({
@@ -69,6 +70,7 @@ export default async function EditTaskPage({
     { data: contractors },
     { data: users },
     { data: subtasks },
+    { data: photos },
   ] = await Promise.all([
     supabase.from('category').select('id, name').order('sort_order'),
     supabase.from('location').select('id, name').order('sort_order'),
@@ -83,6 +85,12 @@ export default async function EditTaskPage({
       .select('id, sequence, description, labor_cost, equipment_cost, status')
       .eq('task_id', task.id)
       .order('sequence'),
+    supabase
+      .from('attachment')
+      .select('id, filename, caption, storage_path, content_type, uploaded_at')
+      .eq('task_id', task.id)
+      .eq('type', 'photo')
+      .order('uploaded_at', { ascending: false }),
   ]);
 
   return (
@@ -132,6 +140,12 @@ export default async function EditTaskPage({
 
       <SubtaskEditor
         subtasks={subtasks ?? []}
+        taskId={task.id}
+        legacyId={task.legacy_id!}
+      />
+
+      <TaskPhotosCard
+        photos={(photos ?? []) as any}
         taskId={task.id}
         legacyId={task.legacy_id!}
       />
