@@ -8,6 +8,7 @@
  */
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { ApprovalBadge } from '@/components/ApprovalBadge';
 
 export const metadata = { title: 'All Tasks — OUC Infrastructure Tasks' };
 
@@ -80,6 +81,7 @@ type TaskRow = {
   total_cost: number;
   subtask_count: number;
   subtask_done_count: number;
+  approved_at: string | null;
 };
 
 type SearchParams = {
@@ -124,7 +126,7 @@ export default async function TasksPage({
   let q = supabase
     .from('task_with_totals')
     .select(
-      'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count'
+      'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at'
     );
 
   if (params.q && params.q.trim()) {
@@ -298,8 +300,9 @@ export default async function TasksPage({
                     </Td>
                     <Td>
                       <Link href={href} className="block">
-                        <div className="font-semibold text-ouc-text hover:text-ouc-accent">
-                          {t.title}
+                        <div className="flex items-center gap-1.5 font-semibold text-ouc-text hover:text-ouc-accent">
+                          <span>{t.title}</span>
+                          <ApprovalBadge approved={!!t.approved_at} />
                         </div>
                         <div className="text-[11.5px] text-ouc-text-muted">
                           {t.subtask_count} sub-task

@@ -12,6 +12,7 @@ import { createClient } from '@/lib/supabase/server';
 import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
+import { ApprovalBadge } from '@/components/ApprovalBadge';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -120,7 +121,7 @@ export default async function TaskDetailPage({
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, created_at, updated_at, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count'
+        'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, created_at, updated_at, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, approved_at'
       )
       .eq('legacy_id', n)
       .maybeSingle(),
@@ -203,9 +204,10 @@ export default async function TaskDetailPage({
           {task.priority}
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="text-[22px] font-bold leading-tight text-ouc-primary">
-            {task.title}{' '}
-            <span className="ml-2 text-sm font-medium text-ouc-text-muted">
+          <h1 className="flex flex-wrap items-center gap-2 text-[22px] font-bold leading-tight text-ouc-primary">
+            <span>{task.title}</span>
+            <ApprovalBadge approved={!!task.approved_at} size="md" />
+            <span className="ml-1 text-sm font-medium text-ouc-text-muted">
               #{task.legacy_id}
             </span>
           </h1>

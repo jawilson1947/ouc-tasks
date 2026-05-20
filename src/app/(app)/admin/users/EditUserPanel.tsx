@@ -83,6 +83,7 @@ export function EditUserPanel({
               <select name="role" defaultValue={user.role} className={fieldCls}>
                 <option value="admin">Admin</option>
                 <option value="editor">Editor</option>
+                <option value="approver">Approver (can approve tasks)</option>
                 <option value="viewer">Viewer</option>
               </select>
             </div>

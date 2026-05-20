@@ -8,14 +8,24 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV: { href: string; label: string; icon: string }[] = [
-  { href: '/dashboard',   label: 'Dashboard',    icon: '📊' },
-  { href: '/tasks',       label: 'All Tasks',    icon: '📋' },
-  { href: '/tasks/mine',  label: 'My Tasks',     icon: '⭐' },
-  { href: '/board',       label: 'Board View',   icon: '🗂️' },
-  { href: '/reports',     label: 'Reports',      icon: '📈' },
-  { href: '/receipts',    label: 'Receipts',     icon: '📎' },
-  { href: '/contractors', label: 'Contractors',  icon: '👥' },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  /** When true the item renders disabled and the link is suppressed.
+   *  Used for "Approve Tasks" when the signed-in user lacks the role. */
+  requiresApproval?: boolean;
+};
+
+const NAV: NavItem[] = [
+  { href: '/dashboard',   label: 'Dashboard',     icon: '📊' },
+  { href: '/tasks',       label: 'All Tasks',     icon: '📋' },
+  { href: '/tasks/mine',  label: 'My Tasks',      icon: '⭐' },
+  { href: '/approvals',   label: 'Approve Tasks', icon: '✅', requiresApproval: true },
+  { href: '/board',       label: 'Board View',    icon: '🗂️' },
+  { href: '/reports',     label: 'Reports',       icon: '📈' },
+  { href: '/receipts',    label: 'Receipts',      icon: '📎' },
+  { href: '/contractors', label: 'Contractors',   icon: '👥' },
 ];
 
 const SETTINGS_NAV: { href: string; label: string }[] = [
@@ -25,7 +35,15 @@ const SETTINGS_NAV: { href: string; label: string }[] = [
   { href: '/admin',               label: 'Admin Dashboard'  },
 ];
 
-export function Sidebar({ displayName }: { displayName?: string }) {
+export function Sidebar({
+  displayName,
+  canApprove = false,
+}: {
+  displayName?: string;
+  /** Whether the signed-in user has Task Approval permission.
+   *  Computed by the (app) layout from the loaded user_profile.role. */
+  canApprove?: boolean;
+}) {
   const pathname = usePathname();
   const settingsActive =
     pathname.startsWith('/settings') || pathname.startsWith('/admin/users');
@@ -39,6 +57,7 @@ export function Sidebar({ displayName }: { displayName?: string }) {
           width={72}
           height={36}
           className="h-9 w-auto"
+          style={{ width: 'auto' }}
         />
         <div className="leading-tight">
           <div className="text-[13px] font-bold tracking-wider">OUC TASKS</div>
@@ -52,6 +71,22 @@ export function Sidebar({ displayName }: { displayName?: string }) {
         {NAV.map((item) => {
           const active =
             pathname === item.href || pathname.startsWith(item.href + '/');
+          const disabled = item.requiresApproval && !canApprove;
+
+          if (disabled) {
+            return (
+              <span
+                key={item.href}
+                aria-disabled="true"
+                title="Requires Task Approval permission"
+                className="flex cursor-not-allowed items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] text-white/40"
+              >
+                <span aria-hidden>{item.icon}</span>
+                <span>{item.label}</span>
+              </span>
+            );
+          }
+
           return (
             <Link
               key={item.href}

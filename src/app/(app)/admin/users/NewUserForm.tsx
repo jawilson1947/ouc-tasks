@@ -81,6 +81,7 @@ export function NewUserForm() {
           >
             <option value="admin">Admin</option>
             <option value="editor">Editor</option>
+            <option value="approver">Approver</option>
             <option value="viewer">Viewer</option>
           </select>
         </Field>

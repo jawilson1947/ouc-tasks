@@ -11,9 +11,9 @@
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { readForm, validate } from './form-helpers';
 
 const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor']);
-const VALID_STATUSES = new Set(['not_started', 'in_progress', 'blocked', 'done']);
 
 async function requireWriter() {
   const supabase = await createClient();
@@ -29,59 +29,6 @@ async function requireWriter() {
     throw new Error('You need admin or editor role to manage tasks.');
   }
   return { supabase, userId: user.id, role };
-}
-
-function readForm(formData: FormData) {
-  const get = (k: string) => {
-    const v = formData.get(k);
-    if (v == null) return null;
-    const s = String(v).trim();
-    return s.length === 0 ? null : s;
-  };
-  const intOrNull = (k: string) => {
-    const s = get(k);
-    if (s == null) return null;
-    const n = Number(s);
-    return Number.isFinite(n) ? n : null;
-  };
-
-  const title       = get('title');
-  const description = get('description');
-  const priorityN   = intOrNull('priority');
-  const status      = get('status');
-  const category_id = intOrNull('category_id');
-  const location_id = intOrNull('location_id');
-  const contractor  = get('contractor_id');
-  const assignee    = get('assignee_id');
-  const due_date    = get('due_date');
-  const notes       = get('notes');
-
-  return {
-    title,
-    description,
-    priority: priorityN,
-    status,
-    category_id,
-    location_id,
-    contractor_id: contractor,
-    assignee_id: assignee,
-    due_date,
-    notes,
-  };
-}
-
-function validate(fields: ReturnType<typeof readForm>): string | null {
-  if (!fields.title) return 'Title is required.';
-  if (fields.priority == null || fields.priority < 1 || fields.priority > 5) {
-    return 'Priority must be 1–5.';
-  }
-  if (!fields.status || !VALID_STATUSES.has(fields.status)) {
-    return 'Pick a valid status.';
-  }
-  if (fields.due_date && !/^\d{4}-\d{2}-\d{2}$/.test(fields.due_date)) {
-    return 'Due date must be YYYY-MM-DD.';
-  }
-  return null;
 }
 
 export async function createTask(formData: FormData) {

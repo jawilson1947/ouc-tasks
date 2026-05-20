@@ -5,6 +5,7 @@
  */
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { fmtDate, fmtUSD } from '@/lib/format';
 import {
   STATUS_LABEL,
@@ -27,6 +28,7 @@ type BoardTask = {
   location_id: number | null;
   due_date: string | null;
   total_cost: number;
+  approved_at: string | null;
 };
 
 export default async function BoardPage() {
@@ -40,7 +42,7 @@ export default async function BoardPage() {
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost'
+        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at'
       )
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false }),
@@ -117,8 +119,9 @@ export default async function BoardPage() {
                         >
                           {t.priority}
                         </span>
-                        <div className="text-[13px] font-semibold leading-snug text-ouc-text">
-                          {t.title}
+                        <div className="flex-1 text-[13px] font-semibold leading-snug text-ouc-text">
+                          <span className="mr-1.5">{t.title}</span>
+                          <ApprovalBadge approved={!!t.approved_at} />
                         </div>
                       </div>
 

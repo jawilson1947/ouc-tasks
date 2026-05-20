@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { Sidebar } from '@/components/Sidebar';
+import { canApproveTasks, type AppRole } from '@/lib/permissions';
 
 function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -37,10 +38,11 @@ export default async function AppLayout({
 
   const displayName = profile?.full_name ?? user.email ?? 'User';
   const initials = initialsFrom(displayName);
+  const canApprove = canApproveTasks((profile?.role ?? null) as AppRole | null);
 
   return (
     <div className="grid min-h-screen grid-cols-[240px_1fr] bg-ouc-surface">
-      <Sidebar displayName={displayName} />
+      <Sidebar displayName={displayName} canApprove={canApprove} />
 
       <main className="flex min-w-0 flex-col">
         <header className="flex items-center justify-between gap-4 border-b border-ouc-border bg-white px-7 py-3.5">

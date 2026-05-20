@@ -17,10 +17,13 @@ type Profile = {
 };
 
 const ROLE_BADGE: Record<string, string> = {
-  admin:  'bg-ouc-primary/12 text-ouc-primary',
-  editor: 'bg-cat-access/12 text-cat-access',
-  viewer: 'bg-ouc-surface-alt text-ouc-text-muted',
+  admin:    'bg-ouc-primary/12 text-ouc-primary',
+  editor:   'bg-cat-access/12 text-cat-access',
+  approver: 'bg-green-100 text-green-800',
+  viewer:   'bg-ouc-surface-alt text-ouc-text-muted',
 };
+
+const KNOWN_ROLES = ['admin', 'editor', 'approver', 'viewer'];
 
 export function UserTableClient({
   users,
@@ -89,8 +92,9 @@ export function UserTableClient({
                     >
                       <option value="admin">Admin</option>
                       <option value="editor">Editor</option>
+                      <option value="approver">Approver</option>
                       <option value="viewer">Viewer</option>
-                      {!['admin', 'editor', 'viewer'].includes(u.role) && (
+                      {!KNOWN_ROLES.includes(u.role) && (
                         <option value={u.role}>{u.role} (legacy)</option>
                       )}
                     </select>

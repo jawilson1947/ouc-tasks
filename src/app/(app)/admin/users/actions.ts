@@ -26,7 +26,7 @@ export type CreateUserState = {
   adminSetPassword?: boolean;
 };
 
-const VALID_ROLES = ['admin', 'editor', 'viewer'] as const;
+const VALID_ROLES = ['admin', 'editor', 'approver', 'viewer'] as const;
 type Role = (typeof VALID_ROLES)[number];
 
 async function requireAdmin() {

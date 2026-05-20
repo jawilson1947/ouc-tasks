@@ -5,6 +5,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { fmtDate, fmtUSD } from '@/lib/format';
 import {
   STATUS_LABEL,
@@ -29,6 +30,7 @@ type MyTask = {
   total_cost: number;
   subtask_count: number;
   subtask_done_count: number;
+  approved_at: string | null;
 };
 
 export default async function MyTasksPage() {
@@ -45,7 +47,7 @@ export default async function MyTasksPage() {
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count'
+        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at'
       )
       .eq('assignee_id', user.id)
       .order('priority', { ascending: false })
@@ -136,8 +138,9 @@ export default async function MyTasksPage() {
                               href={t.legacy_id != null ? `/tasks/${t.legacy_id}` : '#'}
                               className="block"
                             >
-                              <div className="font-semibold text-ouc-text hover:text-ouc-accent">
-                                {t.title}
+                              <div className="flex items-center gap-1.5 font-semibold text-ouc-text hover:text-ouc-accent">
+                                <span>{t.title}</span>
+                                <ApprovalBadge approved={!!t.approved_at} />
                               </div>
                               <div className="text-[11.5px] text-ouc-text-muted">
                                 {t.subtask_count} sub-task{t.subtask_count === 1 ? '' : 's'}

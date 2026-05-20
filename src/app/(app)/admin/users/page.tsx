@@ -77,10 +77,11 @@ export default async function UsersAdminPage({
     : null;
 
   const counts = {
-    admin:  users.filter((u) => u.role === 'admin').length,
-    editor: users.filter((u) => u.role === 'editor').length,
-    viewer: users.filter((u) => u.role === 'viewer').length,
-    other:  users.filter((u) => !['admin', 'editor', 'viewer'].includes(u.role)).length,
+    admin:    users.filter((u) => u.role === 'admin').length,
+    editor:   users.filter((u) => u.role === 'editor').length,
+    approver: users.filter((u) => u.role === 'approver').length,
+    viewer:   users.filter((u) => u.role === 'viewer').length,
+    other:    users.filter((u) => !['admin', 'editor', 'approver', 'viewer'].includes(u.role)).length,
   };
 
   return (
@@ -95,7 +96,7 @@ export default async function UsersAdminPage({
           <h1 className="mb-1 text-2xl font-bold text-ouc-primary">User Management</h1>
           <div className="text-[13.5px] text-ouc-text-muted">
             {users.length} user{users.length === 1 ? '' : 's'} ·{' '}
-            {counts.admin} admin · {counts.editor} editor · {counts.viewer} viewer
+            {counts.admin} admin · {counts.editor} editor · {counts.approver} approver · {counts.viewer} viewer
             {counts.other > 0 && ` · ${counts.other} legacy role`}
           </div>
         </div>

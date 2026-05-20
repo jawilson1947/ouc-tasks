@@ -8,6 +8,7 @@
  */
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { ApprovalBadge } from '@/components/ApprovalBadge';
 
 export const metadata = { title: 'Dashboard — OUC Infrastructure Tasks' };
 
@@ -81,6 +82,7 @@ type TaskRow = {
   total_cost: number;
   subtask_count: number;
   subtask_done_count: number;
+  approved_at: string | null;
 };
 
 export default async function DashboardPage() {
@@ -93,7 +95,7 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase
       .from('task_with_totals')
-      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count')
+      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, approved_at')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false }),
     supabase.from('category').select('id, name'),
@@ -251,7 +253,10 @@ export default async function DashboardPage() {
                       </span>
                     </Td>
                     <Td>
-                      <div className="font-semibold text-ouc-text">{t.title}</div>
+                      <div className="flex items-center gap-1.5 font-semibold text-ouc-text">
+                        <span>{t.title}</span>
+                        <ApprovalBadge approved={!!t.approved_at} />
+                      </div>
                       <div className="text-[11.5px] text-ouc-text-muted">
                         {t.subtask_count} sub-task{t.subtask_count === 1 ? '' : 's'} · #{t.legacy_id ?? '—'}
                       </div>
