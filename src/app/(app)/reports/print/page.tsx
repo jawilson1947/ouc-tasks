@@ -81,7 +81,13 @@ import PrintControlsClient from './PrintControlsClient';
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-const ALL_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+/**
+ * Allowed values for the ?status= URL param. The first four are real
+ * task.status enum values; 'approved' is a special filter that matches
+ * any task with approved_at IS NOT NULL (regardless of status).
+ */
+const ALL_FILTERS = ['not_started', 'in_progress', 'blocked', 'done', 'approved'] as const;
+type FilterValue = (typeof ALL_FILTERS)[number];
 
 export default async function PrintReportPage({
   searchParams,
@@ -91,10 +97,15 @@ export default async function PrintReportPage({
   const { preview, status: statusParam } = await searchParams;
   const isPreview = preview === '1';
 
-  const activeStatuses: string[] = statusParam
-    ? statusParam.split(',').filter((s) => ALL_STATUSES.includes(s as typeof ALL_STATUSES[number]))
+  const activeStatuses: FilterValue[] = statusParam
+    ? (statusParam.split(',').filter((s) =>
+        ALL_FILTERS.includes(s as FilterValue),
+      ) as FilterValue[])
     : [];
   const reportReady = activeStatuses.length > 0;
+  // 'approved' is a special filter — separate from the real status enum values.
+  const approvedFilter = activeStatuses.includes('approved');
+  const realStatuses = activeStatuses.filter((s) => s !== 'approved');
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -108,6 +119,24 @@ export default async function PrintReportPage({
   let grandTotal = 0;
 
   if (reportReady) {
+    // Build the task query: 'approved' filter means "approved but not yet Done"
+    // — i.e. work that's been permitted to start but hasn't been completed.
+    // Done tasks are excluded because they'd otherwise dominate this view
+    // (all Done tasks were backfilled as approved by migration 0006).
+    // Status filters use the .in() on status. The two are mutually exclusive
+    // in the UI today (single-select radio) so we apply whichever was picked.
+    let taskQuery = supabase
+      .from('task_with_totals')
+      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost');
+
+    if (approvedFilter) {
+      taskQuery = taskQuery
+        .not('approved_at', 'is', null)
+        .neq('status', 'done');
+    } else if (realStatuses.length > 0) {
+      taskQuery = taskQuery.in('status', realStatuses);
+    }
+
     const [
       { data: tasksData },
       { data: subtasksData },
@@ -115,11 +144,9 @@ export default async function PrintReportPage({
       { data: users },
       { data: contractors },
     ] = await Promise.all([
-      supabase
-        .from('task_with_totals')
-        .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost')
-        .in('status', activeStatuses)
-        .order('legacy_id'),
+      taskQuery
+        .order('priority', { ascending: false })
+        .order('legacy_id', { ascending: true }),
       supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
       supabase.from('location').select('id, name'),
       supabase.from('user_profile').select('id, full_name'),
@@ -155,6 +182,7 @@ export default async function PrintReportPage({
     in_progress: 'In Progress',
     blocked:     'Blocked',
     done:        'Done',
+    approved:    'Approved',
   };
   const filterLabel = activeStatuses.map((s) => STATUS_LABEL_FULL[s] ?? s).join(', ');
 

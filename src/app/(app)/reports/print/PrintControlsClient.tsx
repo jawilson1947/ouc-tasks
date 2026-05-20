@@ -3,11 +3,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+/**
+ * Filter pill values. The first four are task.status enum values; 'approved'
+ * is a special filter that matches any task with approved_at IS NOT NULL
+ * (regardless of status). Mutually exclusive — radio behaviour.
+ */
 const STATUSES: { value: string; label: string }[] = [
   { value: 'not_started', label: 'Not Started' },
   { value: 'in_progress', label: 'In Progress' },
   { value: 'blocked',     label: 'Blocked'     },
   { value: 'done',        label: 'Done'        },
+  { value: 'approved',    label: 'Approved'    },
 ];
 
 export default function PrintControlsClient({
