@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
+import { TaskDeleteModal } from '@/components/TaskDeleteModal';
 import { updateTask, deleteTask } from '../../actions';
 
 export async function generateMetadata({
@@ -109,15 +110,11 @@ export default async function EditTaskPage({
         <h1 className="text-2xl font-bold text-ouc-primary">
           Edit Task #{task.legacy_id}
         </h1>
-        <form action={deleteTask}>
-          <input type="hidden" name="id" value={task.id} />
-          <button
-            type="submit"
-            className="cursor-pointer rounded-md border border-red-300 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-50"
-          >
-            Delete task
-          </button>
-        </form>
+        <TaskDeleteModal
+          taskId={task.id}
+          taskTitle={task.title}
+          action={deleteTask}
+        />
       </div>
 
       {sp.error && (

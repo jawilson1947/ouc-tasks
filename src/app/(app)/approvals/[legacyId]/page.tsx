@@ -20,6 +20,7 @@ import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
+import { TaskDeleteModal } from '@/components/TaskDeleteModal';
 import { fmtTimestamp } from '@/lib/format';
 import {
   approveTask,
@@ -287,12 +288,13 @@ function ApproverActionsFooter({
               className="cursor-pointer rounded-md border border-amber-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-amber-800 hover:bg-amber-50"
             />
           )}
-          <ConfirmFormClient
+          <TaskDeleteModal
+            taskId={taskId}
+            taskTitle={taskTitle}
             action={deleteTaskAsApprover}
-            id={taskId}
-            label="🗑 Delete task"
-            confirmMessage={`Delete "${taskTitle}"? This cannot be undone. The assignee will be notified.`}
-            className="cursor-pointer rounded-md border border-red-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-50"
+            triggerLabel="🗑 Delete task"
+            triggerClassName="cursor-pointer rounded-md border border-red-300 bg-white px-3.5 py-1.5 text-[12.5px] font-semibold text-red-700 hover:bg-red-50"
+            notice="The assignee will be notified by email. All sub-tasks, photos, and receipts will also be removed."
           />
         </div>
       </div>
