@@ -4,8 +4,10 @@
  * Server Action: sign in via Supabase email + password.
  *
  * Called from the form on src/app/login/page.tsx. On success, redirects to
- * the `next` path (or /dashboard). On failure, redirects back to /login with
- * an `?error=` flag so the page can render a user-friendly message.
+ * the `next` path (default /dashboard). Users with the 'approver' role are
+ * always sent to /approvals regardless of `next` — their primary workflow
+ * is the approval queue. On failure, redirects back to /login with an
+ * `?error=` flag so the page can render a user-friendly message.
  */
 
 import { redirect } from 'next/navigation';
@@ -30,12 +32,24 @@ export async function signIn(formData: FormData) {
     redirect(`/login?error=invalid&next=${encodeURIComponent(next)}`);
   }
 
+  let landingPath = next;
   if (data.user) {
+    const { data: profile } = await supabase
+      .from('user_profile')
+      .select('role')
+      .eq('id', data.user.id)
+      .maybeSingle();
+
     await supabase
       .from('user_profile')
       .update({ last_login: new Date().toISOString() })
       .eq('id', data.user.id);
+
+    // Approvers always land on the approval queue.
+    if (profile?.role === 'approver') {
+      landingPath = '/approvals';
+    }
   }
 
-  redirect(next);
+  redirect(landingPath);
 }
