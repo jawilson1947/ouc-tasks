@@ -40,8 +40,8 @@ export default async function EditTaskPage({
     .select('role')
     .eq('id', user.id)
     .maybeSingle();
-  if (!['admin', 'editor'].includes(profile?.role ?? '')) {
-    redirect(`/tasks/${legacyId}?error=Admin+or+editor+role+required`);
+  if (!['admin', 'editor', 'approver'].includes(profile?.role ?? '')) {
+    redirect(`/tasks/${legacyId}?error=Admin%2C+editor%2C+or+approver+role+required`);
   }
 
   const { data: task, error } = await supabase
@@ -78,7 +78,7 @@ export default async function EditTaskPage({
     supabase
       .from('user_profile')
       .select('id, full_name, role, active')
-      .in('role', ['admin', 'editor'])
+      .in('role', ['admin', 'editor', 'approver'])
       .order('full_name'),
     supabase
       .from('subtask')

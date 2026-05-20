@@ -3,9 +3,14 @@
 /**
  * Task CRUD Server Actions: createTask, updateTask, deleteTask.
  *
- * Authorization: admin and editor can write. RLS at the DB enforces
- * "editor can only mutate own tasks". We re-check here so error messages
- * are friendly.
+ * Authorization: admin, editor, and approver can write. RLS at the DB
+ * enforces "editor can only mutate own tasks"; admin and approver may
+ * mutate anything. We re-check here so error messages are friendly.
+ *
+ * Approval semantics: new tasks are always created unapproved
+ * (approved_at = NULL). Approval is a separate, explicit action performed
+ * via /approvals — even an approver creating a task for themselves must
+ * walk over to the approvals queue and click Approve.
  */
 
 import { redirect } from 'next/navigation';
@@ -13,7 +18,7 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { readForm, validate } from './form-helpers';
 
-const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor']);
+const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor', 'approver']);
 
 async function requireWriter() {
   const supabase = await createClient();
@@ -26,7 +31,7 @@ async function requireWriter() {
     .maybeSingle();
   const role = profile?.role ?? '';
   if (!ROLES_THAT_CAN_WRITE.has(role)) {
-    throw new Error('You need admin or editor role to manage tasks.');
+    throw new Error('You need admin, editor, or approver role to manage tasks.');
   }
   return { supabase, userId: user.id, role };
 }
