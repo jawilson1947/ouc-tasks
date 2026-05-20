@@ -12,6 +12,7 @@ import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/server';
+import { fmtDateLong, fmtDateLonger } from '@/lib/format';
 
 export const metadata = { title: 'Task Report — OUC Infrastructure' };
 
@@ -68,11 +69,8 @@ function usd(n: number | null | undefined) {
     minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n));
 }
 
-function fmtDate(iso: string | null) {
-  if (!iso) return '';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US',
-    { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// fmtDate is provided by @/lib/format as fmtDateLong (timezone-aware).
+const fmtDate = (iso: string | null) => (iso ? fmtDateLong(iso) : '');
 
 // ---------------------------------------------------------------------------
 // Auto-print client component
@@ -150,8 +148,7 @@ export default async function PrintReportPage({
     grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   }
 
-  const today = new Date().toLocaleDateString('en-US',
-    { month: 'long', day: 'numeric', year: 'numeric' });
+  const today = fmtDateLonger(new Date().toISOString());
 
   const STATUS_LABEL_FULL: Record<string, string> = {
     not_started: 'Not Started',
@@ -311,8 +308,7 @@ function TaskBlock({
         )}
         {task.due_date && (
           <div className="mt-0.5 text-[10.5px] text-gray-500">
-            Due: {new Date(task.due_date + 'T00:00:00').toLocaleDateString('en-US',
-              { month: 'short', day: 'numeric', year: 'numeric' })}
+            Due: {fmtDateLong(task.due_date)}
           </div>
         )}
         {/* Subtasks */}

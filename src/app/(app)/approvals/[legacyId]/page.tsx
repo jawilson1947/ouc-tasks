@@ -20,6 +20,7 @@ import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
+import { fmtTimestamp } from '@/lib/format';
 import {
   approveTask,
   revokeApproval,
@@ -35,17 +36,6 @@ export async function generateMetadata({
 }) {
   const { legacyId } = await params;
   return { title: `Review Task #${legacyId} — OUC Infrastructure Tasks` };
-}
-
-function fmtTimestamp(iso: string | null): string {
-  if (!iso) return '';
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 export default async function ApprovalReviewPage({

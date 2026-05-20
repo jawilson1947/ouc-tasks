@@ -16,6 +16,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { deletePhoto } from '@/app/(app)/tasks/photo-actions';
+import { fmtDateLong } from '@/lib/format';
 
 export type Photo = {
   id: string;
@@ -43,9 +44,8 @@ function typeLabel(ct: string | null | undefined): string {
   return 'File';
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// fmtDate is provided by @/lib/format as fmtDateLong (timezone-aware).
+const fmtDate = (iso: string) => fmtDateLong(iso);
 
 // ---------------------------------------------------------------------------
 // Lightbox — image-only

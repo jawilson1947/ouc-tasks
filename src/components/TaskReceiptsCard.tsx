@@ -7,6 +7,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { deleteReceipt } from '@/app/(app)/tasks/receipt-actions';
+import { fmtDateLong } from '@/lib/format';
 
 export type Receipt = {
   id: string;
@@ -31,11 +32,8 @@ function fmtUSD(n: number | string | null) {
   }).format(Number(n));
 }
 
-function fmtDate(iso: string | null) {
-  if (!iso) return '—';
-  const s = iso.includes('T') ? iso : iso + 'T00:00:00';
-  return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
+// fmtDate is provided by @/lib/format as fmtDateLong (timezone-aware).
+const fmtDate = fmtDateLong;
 
 // ---------------------------------------------------------------------------
 // Lightbox

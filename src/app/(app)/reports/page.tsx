@@ -5,7 +5,7 @@
  * Distribution. Charts (Chart.js) and PDF export are TODOs.
  */
 import { createClient } from '@/lib/supabase/server';
-import { fmtUSD } from '@/lib/format';
+import { fmtUSD, fmtDateLonger } from '@/lib/format';
 import { STATUS_LABEL, STATUS_ORDER, STATUS_DOT } from '@/lib/task-display';
 import { ReportsExportBar } from '@/components/ReportsExportBar';
 
@@ -174,7 +174,7 @@ export default async function ReportsPage() {
         <div className="text-right">
           <div className="text-[15px] font-bold text-ouc-primary">Infrastructure Tasks — Reports</div>
           <div className="text-[11px] text-ouc-text-muted">
-            Generated {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+            Generated {fmtDateLonger(new Date().toISOString())}
           </div>
         </div>
       </div>

@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { fmtDate, fmtToday } from '@/lib/format';
 
 export const metadata = { title: 'Dashboard — OUC Infrastructure Tasks' };
 
@@ -57,14 +58,6 @@ function fmtUSD(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n);
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 type TaskRow = {
@@ -135,12 +128,7 @@ export default async function DashboardPage() {
   // High priority: top 6 by priority then due date (already sorted)
   const highPriority = tasks.slice(0, 6);
 
-  const today = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const today = fmtToday();
 
   return (
     <div>

@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { fmtDate } from '@/lib/format';
 
 export const metadata = { title: 'All Tasks — OUC Infrastructure Tasks' };
 
@@ -59,14 +60,6 @@ function fmtUSD(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n);
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '—';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 type TaskRow = {

@@ -13,6 +13,7 @@ import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { fmtDateLong, fmtTimestamp } from '@/lib/format';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -67,27 +68,6 @@ function fmtUSD(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(n);
-}
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return '';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
-/** Format a full ISO timestamp (created_at / updated_at). Returns '' for null. */
-function fmtTimestamp(iso: string | null): string {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 }
 
 export async function generateMetadata({
@@ -231,7 +211,7 @@ export default async function TaskDetailPage({
             </span>
             <span className="self-center text-[12.5px] text-ouc-text-muted">
               📍 {location}
-              {task.due_date && ` · Due ${fmtDate(task.due_date)}`}
+              {task.due_date && ` · Due ${fmtDateLong(task.due_date)}`}
             </span>
           </div>
         </div>
@@ -328,7 +308,7 @@ export default async function TaskDetailPage({
                 {PRIORITY_DESC[task.priority] ?? `P${task.priority}`}
               </DetailRow>
               <DetailRow label="Due">
-                {task.due_date ? fmtDate(task.due_date) : <span className="text-ouc-text-muted">Not set</span>}
+                {task.due_date ? fmtDateLong(task.due_date) : <span className="text-ouc-text-muted">Not set</span>}
               </DetailRow>
               <DetailRow label="Category">
                 <span
