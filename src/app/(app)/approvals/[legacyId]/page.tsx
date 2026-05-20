@@ -112,7 +112,7 @@ export default async function ApprovalReviewPage({
       .from('attachment')
       .select('id, filename, caption, storage_path, content_type, uploaded_at')
       .eq('task_id', task.id)
-      .eq('type', 'photo')
+      .in('type', ['photo', 'document'])
       .order('uploaded_at', { ascending: false }),
     supabase
       .from('attachment')

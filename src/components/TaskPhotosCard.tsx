@@ -1,5 +1,18 @@
 'use client';
 
+/**
+ * TaskPhotosCard — historical name, now the unified Attachments card.
+ * Renders both image attachments (type='photo') and PDF documents
+ * (type='document'). The UI label is "Attachments"; the file/component
+ * name is retained so existing imports keep working.
+ *
+ * Behaviour per type:
+ *   - Images: thumbnail grid (signed URL), click → lightbox
+ *   - PDFs:   file-icon tile,             click → open signed URL in new tab
+ *
+ * Upload accepts JPEG/PNG/WebP/PDF, max 50 MB. The backing API is
+ * /api/photos/upload which branches storage path + attachment type by MIME.
+ */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { deletePhoto } from '@/app/(app)/tasks/photo-actions';
@@ -13,15 +26,29 @@ export type Photo = {
   uploaded_at: string;
 };
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_MB = 10;
+const IMAGE_TYPES   = ['image/jpeg', 'image/png', 'image/webp'];
+const DOC_TYPES     = ['application/pdf'];
+const ALLOWED_TYPES = [...IMAGE_TYPES, ...DOC_TYPES];
+const MAX_MB = 50;
+
+function isImage(ct: string | null | undefined): boolean {
+  return !!ct && IMAGE_TYPES.includes(ct);
+}
+function isPdf(ct: string | null | undefined): boolean {
+  return ct === 'application/pdf';
+}
+function typeLabel(ct: string | null | undefined): string {
+  if (isImage(ct)) return 'Image';
+  if (isPdf(ct))   return 'PDF';
+  return 'File';
+}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // ---------------------------------------------------------------------------
-// Lightbox
+// Lightbox — image-only
 // ---------------------------------------------------------------------------
 function Lightbox({ url, filename, caption, onClose }: {
   url: string; filename: string; caption: string | null; onClose: () => void;
@@ -71,11 +98,18 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
 
   function pickFile(f: File | null) {
     if (!f) return;
-    if (!ALLOWED_TYPES.includes(f.type)) { setError('Only JPEG, PNG, and WebP images are allowed.'); return; }
-    if (f.size > MAX_MB * 1024 * 1024) { setError(`File exceeds ${MAX_MB} MB.`); return; }
+    if (!ALLOWED_TYPES.includes(f.type)) {
+      setError('Only JPEG, PNG, WebP, and PDF files are allowed.');
+      return;
+    }
+    if (f.size > MAX_MB * 1024 * 1024) {
+      setError(`File exceeds ${MAX_MB} MB.`);
+      return;
+    }
     setError(null);
     setFile(f);
-    setPreview(URL.createObjectURL(f));
+    // Generate an in-browser preview URL for images only — PDFs render with a file icon.
+    setPreview(isImage(f.type) ? URL.createObjectURL(f) : null);
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -112,7 +146,7 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
       <div className="fixed inset-0 z-40 bg-black/40" onClick={onClose} />
       <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] flex-col bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-ouc-border px-5 py-4">
-          <h2 className="text-[15px] font-bold text-ouc-primary">Upload Photo</h2>
+          <h2 className="text-[15px] font-bold text-ouc-primary">Upload Attachment</h2>
           <button
             type="button" onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-full text-ouc-text-muted hover:bg-ouc-surface"
@@ -127,10 +161,10 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
           {done ? (
             <div className="flex flex-col items-center justify-center gap-3 py-16">
               <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-3xl text-green-600">✓</div>
-              <p className="font-semibold text-ouc-text">Photo uploaded!</p>
+              <p className="font-semibold text-ouc-text">Attachment uploaded!</p>
             </div>
           ) : (
-            <form id="photo-upload-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <form id="attachment-upload-form" onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div
                 onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
@@ -143,11 +177,17 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
                 <input ref={fileRef} type="file" accept={ALLOWED_TYPES.join(',')} className="hidden"
                   onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
 
-                {file && preview ? (
+                {file ? (
                   <div className="flex flex-col items-center gap-2 px-4 py-4">
-                    <img src={preview} alt="preview" className="h-28 w-28 rounded-lg object-cover shadow" />
+                    {preview ? (
+                      <img src={preview} alt="preview" className="h-28 w-28 rounded-lg object-cover shadow" />
+                    ) : (
+                      <PdfIcon className="h-20 w-20 text-red-500" />
+                    )}
                     <p className="max-w-full truncate text-center text-[12.5px] font-semibold text-ouc-text">{file.name}</p>
-                    <p className="text-[11px] text-ouc-text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p className="text-[11px] text-ouc-text-muted">
+                      {typeLabel(file.type)} · {(file.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
                     <button type="button" onClick={(e) => { e.stopPropagation(); setFile(null); setPreview(null); }}
                       className="text-[11.5px] text-ouc-text-muted underline hover:text-red-600">
                       Remove
@@ -158,8 +198,8 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-10 w-10 text-ouc-text-muted/40">
                       <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
                     </svg>
-                    <p className="text-[13px] font-medium text-ouc-text">Drop image here or <span className="text-ouc-accent underline">browse</span></p>
-                    <p className="text-[11px] text-ouc-text-muted">JPEG, PNG, WebP · max {MAX_MB} MB</p>
+                    <p className="text-[13px] font-medium text-ouc-text">Drop file here or <span className="text-ouc-accent underline">browse</span></p>
+                    <p className="text-[11px] text-ouc-text-muted">JPEG, PNG, WebP, PDF · max {MAX_MB} MB</p>
                   </div>
                 )}
               </div>
@@ -167,7 +207,7 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
               <div>
                 <label className={labelCls}>Caption / Description</label>
                 <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)}
-                  placeholder="e.g. Before installation, damaged panel, site overview"
+                  placeholder="e.g. Before installation, spec sheet, vendor quote"
                   className={fieldCls} />
               </div>
 
@@ -180,10 +220,10 @@ function UploadPanel({ taskId, legacyId, onClose, onSuccess }: {
 
         {!done && (
           <div className="border-t border-ouc-border px-5 py-4">
-            <button form="photo-upload-form" type="submit" disabled={uploading || !file}
+            <button form="attachment-upload-form" type="submit" disabled={uploading || !file}
               className="w-full cursor-pointer rounded-lg bg-ouc-primary py-2.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-ouc-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {uploading ? 'Uploading…' : 'Upload Photo'}
+              {uploading ? 'Uploading…' : 'Upload Attachment'}
             </button>
           </div>
         )}
@@ -200,6 +240,7 @@ export function TaskPhotosCard({
   taskId,
   legacyId,
 }: {
+  /** Misnomer kept for back-compat — array contains BOTH photos and documents. */
   photos: Photo[];
   taskId: string;
   legacyId: number;
@@ -210,20 +251,32 @@ export function TaskPhotosCard({
   const [loadingId, setLoadingId]       = useState<string | null>(null);
   const [deletingId, setDeletingId]     = useState<string | null>(null);
 
+  async function fetchSignedUrl(p: Photo): Promise<string | null> {
+    const res = await fetch(`/api/receipts/signed-url?path=${encodeURIComponent(p.storage_path)}`);
+    const { url, error } = await res.json();
+    if (error || !url) return null;
+    return url as string;
+  }
+
   async function handleView(p: Photo) {
     setLoadingId(p.id);
     try {
-      const res = await fetch(`/api/receipts/signed-url?path=${encodeURIComponent(p.storage_path)}`);
-      const { url, error } = await res.json();
-      if (error || !url) { alert('Could not load photo.'); return; }
-      setLightbox({ url, filename: p.filename, caption: p.caption });
+      const url = await fetchSignedUrl(p);
+      if (!url) { alert('Could not load attachment.'); return; }
+      if (isImage(p.content_type)) {
+        setLightbox({ url, filename: p.filename, caption: p.caption });
+      } else {
+        // PDFs (and any non-image): open in a new tab. We open synchronously
+        // after the await to avoid popup blockers in some browsers.
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
     } finally {
       setLoadingId(null);
     }
   }
 
   async function handleDelete(p: Photo) {
-    if (!confirm(`Delete photo "${p.filename}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete attachment "${p.filename}"? This cannot be undone.`)) return;
     setDeletingId(p.id);
     try {
       await deletePhoto(p.id, legacyId);
@@ -240,7 +293,7 @@ export function TaskPhotosCard({
       <section className="rounded-[10px] border border-ouc-border bg-white px-5 py-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-xs font-bold uppercase tracking-wider text-ouc-primary">
-            Photos
+            Attachments
             {photos.length > 0 && (
               <span className="ml-2 rounded-full bg-ouc-surface px-2 py-0.5 text-[10px] font-bold text-ouc-text-muted normal-case tracking-normal">
                 {photos.length}
@@ -250,12 +303,12 @@ export function TaskPhotosCard({
         </div>
 
         {photos.length === 0 ? (
-          <p className="mb-3 text-[13px] text-ouc-text-muted">No photos yet.</p>
+          <p className="mb-3 text-[13px] text-ouc-text-muted">No attachments yet.</p>
         ) : (
           <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {photos.map((p) => (
               <div key={p.id} className="group relative overflow-hidden rounded-lg border border-ouc-border bg-ouc-surface">
-                <PhotoThumbnail photo={p} onView={() => handleView(p)} />
+                <AttachmentThumbnail attachment={p} onView={() => handleView(p)} />
                 {p.caption && (
                   <p className="truncate px-2 py-1.5 text-[11px] text-ouc-text-muted">{p.caption}</p>
                 )}
@@ -293,7 +346,7 @@ export function TaskPhotosCard({
           <svg viewBox="0 0 16 16" fill="currentColor" className="h-3.5 w-3.5">
             <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2Z"/>
           </svg>
-          Upload photo
+          Upload attachment
         </button>
       </section>
 
@@ -318,38 +371,86 @@ export function TaskPhotosCard({
   );
 }
 
-// Thumbnail with a signed-URL loaded lazily on mount
-function PhotoThumbnail({ photo, onView }: { photo: Photo; onView: () => void }) {
+// ---------------------------------------------------------------------------
+// Thumbnail tile — branches on attachment content type.
+// Images use a signed-URL <img>; PDFs render a static file-icon tile.
+// ---------------------------------------------------------------------------
+function AttachmentThumbnail({
+  attachment,
+  onView,
+}: {
+  attachment: Photo;
+  onView: () => void;
+}) {
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const showsImage = isImage(attachment.content_type);
 
   useEffect(() => {
+    if (!showsImage) return; // PDFs don't need a remote thumbnail
     let cancelled = false;
-    fetch(`/api/receipts/signed-url?path=${encodeURIComponent(photo.storage_path)}`)
+    fetch(`/api/receipts/signed-url?path=${encodeURIComponent(attachment.storage_path)}`)
       .then((r) => r.json())
       .then(({ url }) => { if (!cancelled && url) setThumbUrl(url); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [photo.storage_path]);
+  }, [attachment.storage_path, showsImage]);
 
   return (
     <button
       type="button"
       onClick={onView}
       className="block aspect-video w-full overflow-hidden bg-ouc-surface-alt"
+      title={attachment.filename}
     >
-      {thumbUrl ? (
-        <img
-          src={thumbUrl}
-          alt={photo.caption ?? photo.filename}
-          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
-        />
+      {showsImage ? (
+        thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt={attachment.caption ?? attachment.filename}
+            className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-ouc-text-muted/30">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
+            </svg>
+          </div>
+        )
       ) : (
-        <div className="flex h-full items-center justify-center">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-8 w-8 text-ouc-text-muted/30">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"/>
-          </svg>
+        // PDF tile: file icon + filename
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-2 py-2">
+          <PdfIcon className="h-10 w-10 text-red-500" />
+          <span className="max-w-full truncate text-[10.5px] font-semibold text-ouc-text-muted">
+            {attachment.filename}
+          </span>
         </div>
       )}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PDF file icon (Heroicons document-text outline, sized via className)
+// ---------------------------------------------------------------------------
+function PdfIcon({ className = 'h-8 w-8' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={className}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+      />
+      <text
+        x="12"
+        y="18.5"
+        textAnchor="middle"
+        fontSize="5"
+        fontWeight="700"
+        fill="currentColor"
+        stroke="none"
+      >
+        PDF
+      </text>
+    </svg>
   );
 }
