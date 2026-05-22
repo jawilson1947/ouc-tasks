@@ -10,6 +10,7 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { canApproveTasks, getCurrentRole } from '@/lib/permissions';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { Pagination, buildPageHref } from '@/components/Pagination';
 import { fmtDate, fmtUSD } from '@/lib/format';
 import {
   STATUS_LABEL,
@@ -18,6 +19,8 @@ import {
   PRIORITY_BG,
   categoryBadgeClass,
 } from '@/lib/task-display';
+
+const PAGE_SIZE = 6;
 
 export const metadata = { title: 'Approve Tasks — OUC Infrastructure Tasks' };
 
@@ -46,6 +49,7 @@ export default async function ApprovalsPage({
     deleted?: string;
     error?: string;
     emailFailed?: string;
+    page?: string;
   }>;
 }) {
   const role = await getCurrentRole();
@@ -56,19 +60,26 @@ export default async function ApprovalsPage({
   const sp = await searchParams;
   const supabase = await createClient();
 
+  // Current page (1-indexed). Bad input clamps to 1.
+  const requestedPage = Math.max(1, Number(sp.page) || 1);
+  const from = (requestedPage - 1) * PAGE_SIZE;
+  const to   = from + PAGE_SIZE - 1;
+
   const [
-    { data: tasksData, error: tasksErr },
+    { data: tasksData, error: tasksErr, count: totalCount },
     { data: cats },
     { data: locs },
   ] = await Promise.all([
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, subtask_count, subtask_done_count'
+        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, subtask_count, subtask_done_count',
+        { count: 'exact' }
       )
       .neq('status', 'done')
       .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false }),
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .range(from, to),
     supabase.from('category').select('id, name').order('sort_order'),
     supabase.from('location').select('id, name'),
   ]);
@@ -85,8 +96,15 @@ export default async function ApprovalsPage({
   const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
   const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
 
-  const awaitingCount = tasks.filter((t) => !t.approved_at).length;
-  const approvedCount = tasks.length - awaitingCount;
+  // Pagination derived values. The awaiting/approved breakdown that lived
+  // here previously was page-scoped (only counted rows in the current slice)
+  // and so was dropped — it'd be misleading. An accurate split would require
+  // a separate count query; not worth the round-trip for the header text.
+  const total       = totalCount ?? tasks.length;
+  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo   = Math.min(currentPage * PAGE_SIZE, total);
 
   return (
     <div>
@@ -97,7 +115,15 @@ export default async function ApprovalsPage({
             Approve Tasks
           </h1>
           <div className="text-[13.5px] text-ouc-text-muted">
-            {tasks.length} task{tasks.length === 1 ? '' : 's'} not yet Done · {awaitingCount} awaiting approval · {approvedCount} approved · sorted by priority
+            {total === 0 ? (
+              <>No tasks not yet Done &middot; the queue is clear.</>
+            ) : (
+              <>
+                Showing {showingFrom}&ndash;{showingTo} of {total} task{total === 1 ? '' : 's'} not yet Done
+                {totalPages > 1 && <> &middot; page {currentPage} of {totalPages}</>}
+                {' '}&middot; sorted by priority
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -224,6 +250,13 @@ export default async function ApprovalsPage({
           </table>
         )}
       </div>
+
+      {/* Pagination bar — hidden when only one page */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        hrefForPage={(p) => buildPageHref('/approvals', p)}
+      />
     </div>
   );
 }

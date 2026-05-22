@@ -6,7 +6,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { Pagination, buildPageHref } from '@/components/Pagination';
 import { fmtDate, fmtUSD } from '@/lib/format';
+
+const PAGE_SIZE = 6;
 import {
   STATUS_LABEL,
   STATUS_ORDER,
@@ -33,25 +36,37 @@ type MyTask = {
   approved_at: string | null;
 };
 
-export default async function MyTasksPage() {
+export default async function MyTasksPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const sp = await searchParams;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
+  // Current page (1-indexed). Bad input clamps to 1.
+  const requestedPage = Math.max(1, Number(sp.page) || 1);
+  const from = (requestedPage - 1) * PAGE_SIZE;
+  const to   = from + PAGE_SIZE - 1;
+
   const [
-    { data: tasksData, error: tasksErr },
+    { data: tasksData, error: tasksErr, count: totalCount },
     { data: cats },
     { data: locs },
   ] = await Promise.all([
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at'
+        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at',
+        { count: 'exact' }
       )
       .eq('assignee_id', user.id)
       .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false }),
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .range(from, to),
     supabase.from('category').select('id, name'),
     supabase.from('location').select('id, name'),
   ]);
@@ -68,22 +83,33 @@ export default async function MyTasksPage() {
   const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
   const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
 
-  const open = tasks.filter((t) => t.status !== 'done');
-  const done = tasks.filter((t) => t.status === 'done');
-  const totalOpenCost = open.reduce((sum, t) => sum + Number(t.total_cost), 0);
+  // Pagination derived values. The summary/status counts now reflect the
+  // current page slice rather than the user's whole queue — accurate
+  // aggregate counts would need a second query and aren't worth the round-trip
+  // for this view.
+  const total       = totalCount ?? tasks.length;
+  const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo   = Math.min(currentPage * PAGE_SIZE, total);
 
   return (
     <div>
       <div className="mb-5">
         <h1 className="mb-1 text-2xl font-bold text-ouc-primary">My Tasks</h1>
         <div className="text-[13.5px] text-ouc-text-muted">
-          {tasks.length === 0
-            ? 'You don’t have any tasks assigned to you yet.'
-            : `${open.length} open · ${done.length} done · ${fmtUSD(totalOpenCost)} in your queue`}
+          {total === 0 ? (
+            <>You don&rsquo;t have any tasks assigned to you yet.</>
+          ) : (
+            <>
+              Showing {showingFrom}&ndash;{showingTo} of {total} task{total === 1 ? '' : 's'} assigned to you
+              {totalPages > 1 && <> &middot; page {currentPage} of {totalPages}</>}
+            </>
+          )}
         </div>
       </div>
 
-      {tasks.length === 0 ? (
+      {total === 0 ? (
         <div className="rounded-[10px] border border-ouc-border bg-white px-6 py-8 text-center shadow-sm">
           <div className="mb-2 text-base font-semibold text-ouc-text">Nothing on your plate</div>
           <p className="mx-auto max-w-md text-[13.5px] text-ouc-text-muted">
@@ -177,6 +203,13 @@ export default async function MyTasksPage() {
           })}
         </div>
       )}
+
+      {/* Pagination bar — hidden when only one page */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        hrefForPage={(p) => buildPageHref('/tasks/mine', p)}
+      />
     </div>
   );
 }

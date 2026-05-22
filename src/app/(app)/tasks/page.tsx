@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
+import { Pagination } from '@/components/Pagination';
 import { fmtDate } from '@/lib/format';
 
 export const metadata = { title: 'All Tasks — OUC Infrastructure Tasks' };
@@ -82,11 +83,17 @@ type SearchParams = {
   status?: string;
   priority?: string;
   category?: string;
+  page?: string;
 };
+
+const PAGE_SIZE = 6;
 
 /**
  * Build a /tasks?... href that flips one filter while preserving the rest.
  * If `value` matches the current value, the filter is cleared (toggle off).
+ *
+ * Filter changes always reset back to page 1 — staying on page 5 after
+ * narrowing a result set down to 7 items would just show an empty page.
  */
 function buildHref(
   current: SearchParams,
@@ -99,10 +106,25 @@ function buildHref(
   } else {
     next[key] = value;
   }
+  delete next.page;
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(next)) {
     if (v) qs.set(k, String(v));
   }
+  const s = qs.toString();
+  return s ? `/tasks?${s}` : '/tasks';
+}
+
+/**
+ * Build a /tasks?... href that jumps to a specific page while preserving
+ * every other filter unchanged.
+ */
+function buildPageHrefForTasks(targetPage: number, current: SearchParams): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(current)) {
+    if (v && k !== 'page') qs.set(k, String(v));
+  }
+  if (targetPage > 1) qs.set('page', String(targetPage));
   const s = qs.toString();
   return s ? `/tasks?${s}` : '/tasks';
 }
@@ -115,11 +137,19 @@ export default async function TasksPage({
   const params = await searchParams;
   const supabase = await createClient();
 
+  // Current page (1-indexed). Negative / non-numeric values clamp to 1.
+  const requestedPage = Math.max(1, Number(params.page) || 1);
+  const from = (requestedPage - 1) * PAGE_SIZE;
+  const to   = from + PAGE_SIZE - 1;
+
   // Build the query with the active filters applied server-side.
+  // count:'exact' lets us return the total matching row count in the same
+  // round-trip — needed for the pagination bar.
   let q = supabase
     .from('task_with_totals')
     .select(
-      'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at'
+      'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at',
+      { count: 'exact' }
     );
 
   if (params.q && params.q.trim()) {
@@ -136,13 +166,14 @@ export default async function TasksPage({
   }
 
   const [
-    { data: tasksData, error: tasksErr },
+    { data: tasksData, error: tasksErr, count: totalCount },
     { data: cats },
     { data: locs },
   ] = await Promise.all([
     q
       .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false }),
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .range(from, to),
     supabase.from('category').select('id, name').order('sort_order'),
     supabase.from('location').select('id, name'),
   ]);
@@ -166,6 +197,14 @@ export default async function TasksPage({
     (params.priority ? 1 : 0) +
     (params.category ? 1 : 0);
 
+  // Pagination derived values. totalCount is null only on error/edge cases —
+  // fall back to the number of rows we got so the UI stays sensible.
+  const total      = totalCount ?? tasks.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const currentPage = Math.min(requestedPage, totalPages);
+  const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const showingTo   = Math.min(currentPage * PAGE_SIZE, total);
+
   return (
     <div>
       {/* Page header */}
@@ -173,10 +212,17 @@ export default async function TasksPage({
         <div>
           <h1 className="mb-1 text-2xl font-bold text-ouc-primary">All Tasks</h1>
           <div className="text-[13.5px] text-ouc-text-muted">
-            {tasks.length} task{tasks.length === 1 ? '' : 's'}
+            {total === 0 ? (
+              <>0 tasks</>
+            ) : (
+              <>
+                Showing {showingFrom}&ndash;{showingTo} of {total} task{total === 1 ? '' : 's'}
+                {totalPages > 1 && <> &middot; page {currentPage} of {totalPages}</>}
+              </>
+            )}
             {filterCount > 0 && (
               <>
-                {' '}matching {filterCount} filter{filterCount === 1 ? '' : 's'}{' '}
+                {' '}&middot; {filterCount} filter{filterCount === 1 ? '' : 's'} active{' '}
                 <Link href="/tasks" className="text-ouc-accent hover:underline">
                   Clear
                 </Link>
@@ -341,6 +387,13 @@ export default async function TasksPage({
           </table>
         )}
       </div>
+
+      {/* Pagination bar — hidden when there's only one page */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        hrefForPage={(p) => buildPageHrefForTasks(p, params)}
+      />
     </div>
   );
 }
