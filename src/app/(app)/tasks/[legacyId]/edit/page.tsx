@@ -8,6 +8,7 @@ import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { TaskDeleteModal } from '@/components/TaskDeleteModal';
+import { RequestApprovalButton } from '@/components/RequestApprovalButton';
 import { updateTask, deleteTask } from '../../actions';
 
 export async function generateMetadata({
@@ -24,7 +25,12 @@ export default async function EditTaskPage({
   searchParams,
 }: {
   params: Promise<{ legacyId: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    approversNotified?: string;
+    noApprovers?: string;
+    emailFailed?: string;
+  }>;
 }) {
   const { legacyId } = await params;
   const sp = await searchParams;
@@ -122,6 +128,21 @@ export default async function EditTaskPage({
           {sp.error}
         </div>
       )}
+      {sp.approversNotified && (
+        <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">
+          Approver(s) have been notified.
+          {sp.emailFailed && (
+            <span className="ml-1.5 italic text-amber-700">
+              (one or more email notifications failed — please follow up manually)
+            </span>
+          )}
+        </div>
+      )}
+      {sp.noApprovers && (
+        <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-[13px] font-medium text-green-800">
+          No approvers exist; request cannot be forwarded.
+        </div>
+      )}
 
       <TaskForm
         action={updateTask}
@@ -133,6 +154,12 @@ export default async function EditTaskPage({
         submitLabel="Save changes"
         isEdit
         cancelHref={`/tasks/${legacyId}`}
+        requestApprovalSlot={
+          <RequestApprovalButton
+            taskId={task.id}
+            legacyId={task.legacy_id!}
+          />
+        }
       />
 
       <SubtaskEditor

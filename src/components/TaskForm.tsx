@@ -138,6 +138,7 @@ export function TaskForm({
   submitLabel = 'Create task',
   isEdit = false,
   cancelHref = '/tasks',
+  requestApprovalSlot,
 }: {
   action: (formData: FormData) => void | Promise<void>;
   defaults?: TaskDefaults;
@@ -148,6 +149,13 @@ export function TaskForm({
   submitLabel?: string;
   isEdit?: boolean;
   cancelHref?: string;
+  /**
+   * Optional node rendered in the footer immediately before the Cancel link.
+   * Used by /tasks/[legacyId]/edit to inject the "Request Approval" button.
+   * Intentionally omitted on the approval review page so approvers don't see
+   * the button while they're already reviewing.
+   */
+  requestApprovalSlot?: React.ReactNode;
 }) {
   const [notesText, setNotesText] = useState(defaults.notes ?? '');
   const [modalOpen, setModalOpen] = useState(false);
@@ -312,6 +320,7 @@ export function TaskForm({
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-end gap-2 border-t border-ouc-border pt-3">
+          {requestApprovalSlot}
           <Link
             href={cancelHref}
             className="rounded-md border border-ouc-border bg-white px-3.5 py-1.5 text-[12.5px] font-medium text-ouc-text hover:bg-ouc-surface-alt"

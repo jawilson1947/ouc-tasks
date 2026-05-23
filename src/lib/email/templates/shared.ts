@@ -51,3 +51,9 @@ export function taskUrl(legacyId: number | null): string | null {
   if (legacyId == null) return null;
   return `${appUrl()}/tasks/${legacyId}`;
 }
+
+/** Deep link to an approval review page by legacy id. Returns `null` if missing. */
+export function approvalUrl(legacyId: number | null): string | null {
+  if (legacyId == null) return null;
+  return `${appUrl()}/approvals/${legacyId}`;
+}
