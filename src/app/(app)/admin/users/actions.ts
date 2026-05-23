@@ -181,12 +181,14 @@ export async function updateUser(
     return { ok: false, error: (e as Error).message };
   }
 
-  const targetId  = String(formData.get('id')        ?? '').trim();
-  const firstName = String(formData.get('firstName') ?? '').trim();
-  const lastName  = String(formData.get('lastName')  ?? '').trim();
-  const email     = String(formData.get('email')     ?? '').trim().toLowerCase();
-  const role      = String(formData.get('role')      ?? '');
-  const active    = formData.get('active') === 'true';
+  const targetId        = String(formData.get('id')              ?? '').trim();
+  const firstName       = String(formData.get('firstName')       ?? '').trim();
+  const lastName        = String(formData.get('lastName')        ?? '').trim();
+  const email           = String(formData.get('email')           ?? '').trim().toLowerCase();
+  const role            = String(formData.get('role')            ?? '');
+  const active          = formData.get('active') === 'true';
+  const password        = String(formData.get('password')        ?? '');
+  const passwordConfirm = String(formData.get('passwordConfirm') ?? '');
 
   if (!targetId)  return { ok: false, error: 'Missing user id.' };
   if (!firstName) return { ok: false, error: 'First name is required.' };
@@ -198,14 +200,25 @@ export async function updateUser(
   if (!VALID_ROLES.includes(role as Role)) {
     return { ok: false, error: 'Pick a valid role.' };
   }
+  if (password || passwordConfirm) {
+    if (password !== passwordConfirm) {
+      return { ok: false, error: 'Passwords do not match.' };
+    }
+    if (password.length < 8) {
+      return { ok: false, error: 'Password must be at least 8 characters.' };
+    }
+  }
 
   const fullName = `${firstName} ${lastName}`;
   const admin = createAdminClient();
 
-  const { error: authErr } = await admin.auth.admin.updateUserById(targetId, {
+  const authUpdate: Parameters<typeof admin.auth.admin.updateUserById>[1] = {
     email,
     user_metadata: { full_name: fullName, first_name: firstName, last_name: lastName },
-  });
+  };
+  if (password) authUpdate.password = password;
+
+  const { error: authErr } = await admin.auth.admin.updateUserById(targetId, authUpdate);
   if (authErr) return { ok: false, error: authErr.message };
 
   const { error: profileErr } = await admin

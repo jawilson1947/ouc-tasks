@@ -102,6 +102,33 @@ export function EditUserPanel({
               </div>
             </div>
 
+            <div className="border-t border-ouc-border pt-4">
+              <p className="mb-3 text-[11.5px] text-ouc-text-muted">
+                Leave blank to keep the current password.
+              </p>
+              <div className="flex flex-col gap-3">
+                <div>
+                  <label className={labelCls}>New password</label>
+                  <input
+                    name="password"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Min. 8 characters"
+                    className={fieldCls}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Confirm new password</label>
+                  <input
+                    name="passwordConfirm"
+                    type="password"
+                    autoComplete="new-password"
+                    className={fieldCls}
+                  />
+                </div>
+              </div>
+            </div>
+
             {state.error && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12.5px] text-red-700">
                 {state.error}
