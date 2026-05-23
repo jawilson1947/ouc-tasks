@@ -62,7 +62,7 @@ export default async function ApprovalReviewPage({
   const { data: task, error: taskErr } = await supabase
     .from('task')
     .select(
-      'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by, approved_at, approved_by'
+      'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by, approved_at, approved_by, requested_approval_at'
     )
     .eq('legacy_id', n)
     .maybeSingle();

@@ -53,7 +53,7 @@ export default async function EditTaskPage({
 
   const { data: task, error } = await supabase
     .from('task')
-    .select('id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by')
+    .select('id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by, requested_approval_at')
     .eq('legacy_id', n)
     .maybeSingle();
 

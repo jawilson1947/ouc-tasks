@@ -6,8 +6,11 @@
  * Cancel on /tasks/[legacyId]/edit.
  *
  * Semantics:
- *   - Fire-and-forget. No DB write on the task row (no approval_requested_at
- *     column, no migration). Nothing persists beyond the SendGrid call.
+ *   - On a successful send (at least one approver email accepted by SendGrid)
+ *     we stamp `task.requested_approval_at = now()`. Re-clicking overwrites
+ *     the prior timestamp — no preserve-first-only, no throttle. If the send
+ *     fails entirely, or if there were zero approvers to send to, the column
+ *     is left untouched. Approval (later) does NOT clear the column.
  *   - Permission gate matches the edit page: signed-in admin/editor/approver,
  *     and editors must own the task. We re-check here as defense in depth.
  *   - Recipient query: user_profile rows where role in ('admin','approver'),
@@ -140,6 +143,29 @@ export async function requestApproval(formData: FormData) {
     assigneeEmail,
     plannedBudget,
   });
+
+  // Persist the request timestamp ONLY when at least one email was accepted
+  // by SendGrid. okCount === 0 covers both "send blew up entirely" and the
+  // (already short-circuited above) "no approvers existed" case. Re-clicks
+  // overwrite by design — the column reflects the most recent successful
+  // request, not the first one.
+  if (sendResult.okCount > 0) {
+    const legacyIdNum = Number(legacyIdRaw);
+    if (Number.isInteger(legacyIdNum)) {
+      const { error: stampErr } = await supabase
+        .from('task')
+        .update({ requested_approval_at: new Date().toISOString() })
+        .eq('legacy_id', legacyIdNum);
+      if (stampErr) {
+        // Best-effort: the email already went out, so we don't fail the whole
+        // action. Log and continue so the banner still surfaces.
+        console.error(
+          `[request-approval] failed to stamp requested_approval_at on task ${legacyIdNum}:`,
+          stampErr,
+        );
+      }
+    }
+  }
 
   // Revalidate the edit page so the banner shows on the redirected GET.
   revalidatePath(`/tasks/${legacyIdRaw}`);

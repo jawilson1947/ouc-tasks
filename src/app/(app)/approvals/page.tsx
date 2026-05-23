@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 import { canApproveTasks, getCurrentRole } from '@/lib/permissions';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { Pagination, buildPageHref } from '@/components/Pagination';
-import { fmtDate, fmtUSD } from '@/lib/format';
+import { fmtDate, fmtTimestamp, fmtUSD } from '@/lib/format';
 import {
   STATUS_LABEL,
   STATUS_COLOR,
@@ -35,6 +35,7 @@ type ApprovalRow = {
   due_date: string | null;
   total_cost: number;
   approved_at: string | null;
+  requested_approval_at: string | null;
   subtask_count: number;
   subtask_done_count: number;
 };
@@ -73,7 +74,7 @@ export default async function ApprovalsPage({
     supabase
       .from('task_with_totals')
       .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, subtask_count, subtask_done_count',
+        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, requested_approval_at, subtask_count, subtask_done_count',
         { count: 'exact' }
       )
       .neq('status', 'done')
@@ -198,6 +199,11 @@ export default async function ApprovalsPage({
                           {t.subtask_done_count > 0 && ` · ${t.subtask_done_count} done`}{' '}
                           · #{t.legacy_id ?? '—'}
                         </div>
+                        {t.requested_approval_at && (
+                          <div className="text-[11.5px] text-ouc-text-muted">
+                            Requested on {fmtTimestamp(t.requested_approval_at)}
+                          </div>
+                        )}
                       </Link>
                     </Td>
                     <Td>

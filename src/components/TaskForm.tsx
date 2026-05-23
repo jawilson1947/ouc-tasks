@@ -12,6 +12,7 @@
  */
 import { useState, useRef } from 'react';
 import Link from 'next/link';
+import { fmtTimestamp } from '@/lib/format';
 
 export type TaskDefaults = {
   id?: string;
@@ -26,6 +27,13 @@ export type TaskDefaults = {
   assignee_id?: string | null;
   due_date?: string | null;
   notes?: string | null;
+  /**
+   * When the most recent "Request Approval" click resulted in at least one
+   * email being accepted by SendGrid. Rendered as a small muted label in the
+   * footer to the LEFT of `requestApprovalSlot`. Re-clicks overwrite. NULL
+   * means the request has never been sent (or has only ever failed entirely).
+   */
+  requested_approval_at?: string | null;
 };
 
 type Cat        = { id: number; name: string };
@@ -320,6 +328,12 @@ export function TaskForm({
 
         {/* Footer */}
         <div className="mt-4 flex items-center justify-end gap-2 border-t border-ouc-border pt-3">
+          {defaults.requested_approval_at && (
+            <span className="text-[11.5px] text-ouc-text-muted">
+              Request for approval submitted on{' '}
+              {fmtTimestamp(defaults.requested_approval_at)}
+            </span>
+          )}
           {requestApprovalSlot}
           <Link
             href={cancelHref}
