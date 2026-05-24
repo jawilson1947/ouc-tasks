@@ -237,19 +237,26 @@ export default async function PrintReportPage({
           </div>
         </div>
 
-        {/* ── Task Table ── */}
-        <table className="w-full border-collapse text-[11.5px]">
+        {/* ── Task Table ──
+            Column widths are enforced via `table-fixed` so the Description
+            column ("Task / Sub-tasks") gets the horizontal space it needs
+            for long sentences to read naturally instead of wrapping into
+            one-word lines. Other columns are intentionally narrow — they
+            hold short values (legacy id, priority code, status code, a
+            location name, a person/contractor name, and short currency
+            amounts) and can wrap if needed. */}
+        <table className="w-full table-fixed border-collapse text-[11.5px]">
           <thead>
             <tr className="border-b-2 border-gray-800 bg-gray-100">
-              <Th w="4%">#</Th>
-              <Th w="35%" align="left">Task / Sub-tasks</Th>
-              <Th w="12%" align="left">Location</Th>
-              <Th w="10%" align="left">Assignee / Contractor</Th>
-              <Th w="6%">Pri</Th>
-              <Th w="6%">Status</Th>
-              <Th w="9%" align="right">Labor</Th>
-              <Th w="9%" align="right">Equip</Th>
-              <Th w="9%" align="right">Total</Th>
+              <Th w="3%">#</Th>
+              <Th w="52%" align="left">Task / Sub-tasks</Th>
+              <Th w="9%" align="left">Location</Th>
+              <Th w="8%" align="left">Assignee / Contractor</Th>
+              <Th w="4%">Pri</Th>
+              <Th w="4%">Status</Th>
+              <Th w="7%" align="right">Labor</Th>
+              <Th w="7%" align="right">Equip</Th>
+              <Th w="6%" align="right">Total</Th>
             </tr>
           </thead>
           <tbody>
