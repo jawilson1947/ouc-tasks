@@ -22,7 +22,7 @@ import {
 
 const PAGE_SIZE = 6;
 
-export const metadata = { title: 'Approve Tasks — OUC Infrastructure Tasks' };
+export const metadata = { title: 'Approve/Pay Tasks — OUC Infrastructure Tasks' };
 
 type ApprovalRow = {
   id: string;
@@ -113,7 +113,7 @@ export default async function ApprovalsPage({
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="mb-1 text-2xl font-bold text-ouc-primary">
-            Approve Tasks
+            Approve/Pay Tasks
           </h1>
           <div className="text-[13.5px] text-ouc-text-muted">
             {total === 0 ? (

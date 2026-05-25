@@ -21,7 +21,7 @@ const NAV: NavItem[] = [
   { href: '/dashboard',   label: 'Dashboard',     icon: '📊' },
   { href: '/tasks',       label: 'All Tasks',     icon: '📋' },
   { href: '/tasks/mine',  label: 'My Tasks',      icon: '⭐' },
-  { href: '/approvals',   label: 'Approve Tasks', icon: '✅', requiresApproval: true },
+  { href: '/approvals',   label: 'Approve/Pay Tasks', icon: '✅', requiresApproval: true },
   { href: '/board',       label: 'Board View',    icon: '🗂️' },
   { href: '/reports',     label: 'Reports',       icon: '📈' },
   { href: '/receipts',    label: 'Receipts',      icon: '📎' },
