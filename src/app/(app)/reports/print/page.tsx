@@ -121,20 +121,20 @@ export default async function PrintReportPage({
   let grandTotal = 0;
 
   if (reportReady) {
-    // Build the task query: 'approved' filter means "approved but not yet Done"
-    // — i.e. work that's been permitted to start but hasn't been completed.
-    // Done tasks are excluded because they'd otherwise dominate this view
-    // (all Done tasks were backfilled as approved by migration 0006).
-    // Status filters use the .in() on status. The two are mutually exclusive
-    // in the UI today (single-select radio) so we apply whichever was picked.
+    // Build the task query: 'approved' filter mirrors the /approvals page —
+    // any task with requested_approval_at IS NOT NULL, excluding blocked and
+    // closed, ordered by priority then legacy_id. Status filters use .in()
+    // on status. The two are mutually exclusive in the UI (single-select
+    // radio) so we apply whichever was picked.
     let taskQuery = supabase
       .from('task_with_totals')
       .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost');
 
     if (approvedFilter) {
       taskQuery = taskQuery
-        .not('approved_at', 'is', null)
-        .neq('status', 'done');
+        .not('requested_approval_at', 'is', null)
+        .neq('status', 'blocked')
+        .neq('status', 'closed');
     } else if (realStatuses.length > 0) {
       taskQuery = taskQuery.in('status', realStatuses);
     }
