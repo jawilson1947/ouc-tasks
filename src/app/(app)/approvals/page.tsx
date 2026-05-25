@@ -246,7 +246,7 @@ export default async function ApprovalsPage({
                         href={reviewHref}
                         className="rounded-md bg-ouc-primary px-2.5 py-1 text-[12px] font-semibold text-white hover:bg-ouc-primary-hover"
                       >
-                        Review
+                        {t.status === 'done' ? 'Pay' : 'Review'}
                       </Link>
                     </Td>
                   </tr>
