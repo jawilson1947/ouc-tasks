@@ -17,6 +17,7 @@ import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { readForm, validate } from './form-helpers';
+import { sendTaskDoneEmail } from '@/lib/email/sendTaskDoneEmail';
 
 const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor', 'approver']);
 
@@ -26,14 +27,14 @@ async function requireWriter() {
   if (!user) throw new Error('Not authenticated.');
   const { data: profile } = await supabase
     .from('user_profile')
-    .select('role')
+    .select('role, full_name')
     .eq('id', user.id)
     .maybeSingle();
   const role = profile?.role ?? '';
   if (!ROLES_THAT_CAN_WRITE.has(role)) {
     throw new Error('You need admin, editor, or approver role to manage tasks.');
   }
-  return { supabase, userId: user.id, role };
+  return { supabase, userId: user.id, role, fullName: profile?.full_name ?? null };
 }
 
 export async function createTask(formData: FormData) {
@@ -92,8 +93,9 @@ export async function createTask(formData: FormData) {
 
 export async function updateTask(formData: FormData) {
   let supabase: Awaited<ReturnType<typeof createClient>>;
+  let fullName: string | null = null;
   try {
-    ({ supabase } = await requireWriter());
+    ({ supabase, fullName } = await requireWriter());
   } catch (e) {
     redirect(`/tasks?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -106,6 +108,54 @@ export async function updateTask(formData: FormData) {
   const err = validate(fields);
   if (err) {
     redirect(`/tasks/${legacyIdRaw}/edit?error=${encodeURIComponent(err)}`);
+  }
+
+  // Fetch the current status before writing so we can detect a transition to
+  // "done" and notify approvers. Also captures title and legacy_id for the email.
+  const { data: existing } = await supabase
+    .from('task')
+    .select('status, title, legacy_id')
+    .eq('id', id)
+    .maybeSingle();
+  const previousStatus = existing?.status ?? null;
+
+  // Receipt guard: if the incoming status is "done" and the task has subtasks
+  // with equipment costs, at least one receipt must be attached. If the check
+  // fails, reset the status to "in_progress" (if it isn't already) and send
+  // the user back to the detail page with a clear error — the main update
+  // never runs.
+  if (fields.status === 'done') {
+    const [{ count: equipCount }, { count: receiptCount }] = await Promise.all([
+      supabase
+        .from('subtask')
+        .select('id', { count: 'exact', head: true })
+        .eq('task_id', id)
+        .gt('equipment_cost', 0),
+      supabase
+        .from('attachment')
+        .select('id', { count: 'exact', head: true })
+        .eq('task_id', id)
+        .eq('type', 'receipt'),
+    ]);
+
+    if ((equipCount ?? 0) > 0 && (receiptCount ?? 0) === 0) {
+      // Reset to in_progress if the task is not already there.
+      if (previousStatus !== 'in_progress') {
+        await supabase
+          .from('task')
+          .update({ status: 'in_progress' })
+          .eq('id', id);
+        revalidatePath('/tasks');
+        revalidatePath('/dashboard');
+        revalidatePath('/board');
+        revalidatePath(`/tasks/${legacyIdRaw}`);
+      }
+      redirect(
+        `/tasks/${legacyIdRaw}?error=${encodeURIComponent(
+          'At least one receipt is required for this task — it has sub-tasks with equipment costs. Please attach a receipt before marking it Done.'
+        )}`
+      );
+    }
   }
 
   const { error } = await supabase
@@ -126,6 +176,35 @@ export async function updateTask(formData: FormData) {
 
   if (error) {
     redirect(`/tasks/${legacyIdRaw}/edit?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // If the task just became Done, email all active approvers and admins.
+  // Best-effort: DB write already succeeded so we never block the redirect.
+  if (fields.status === 'done' && previousStatus !== 'done' && existing) {
+    const { data: recipientRows } = await supabase
+      .from('user_profile')
+      .select('email, full_name')
+      .in('role', ['admin', 'approver'])
+      .eq('active', true)
+      .not('email', 'is', null);
+
+    const recipients = (recipientRows ?? [])
+      .filter((r): r is { email: string; full_name: string | null } =>
+        typeof r.email === 'string' && r.email.trim() !== ''
+      )
+      .map((r) => ({ email: r.email, fullName: r.full_name }));
+
+    if (recipients.length > 0) {
+      const completedByName = fullName?.trim() || 'A team member';
+      sendTaskDoneEmail({
+        recipients,
+        taskTitle: existing.title,
+        taskLegacyId: existing.legacy_id,
+        completedByName,
+      }).catch((e) =>
+        console.error('[email] task-done fan-out threw unexpectedly:', e)
+      );
+    }
   }
 
   revalidatePath('/tasks');

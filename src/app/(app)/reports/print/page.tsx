@@ -205,13 +205,37 @@ export default async function PrintReportPage({
         body { font-family: 'Times New Roman', Times, serif; background: white; }
       `}</style>
 
-      <div className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
-
-        {/* Filter controls — always visible on screen */}
+      {/* Filter controls — outside the page simulation, never printed */}
+      <div className="no-print mx-auto max-w-[1200px] px-6 py-4">
         <PrintControlsClient activeStatuses={activeStatuses} isPreview={isPreview} reportReady={reportReady} />
+      </div>
 
-        {/* ── Report (only shown once statuses are selected) ── */}
-        {reportReady && (<>
+      {reportReady && (
+        /* Gray background simulates the print environment in preview mode */
+        <div className={isPreview ? 'bg-gray-300 py-10' : ''}>
+          {isPreview && (
+            <p
+              className="no-print mx-auto mb-2 text-center text-[11px] text-gray-500"
+              style={{ width: '1056px' }}
+            >
+              Preview — Landscape Letter (11 × 8.5 in) · screen simulation at 96 dpi
+            </p>
+          )}
+          {/* White "page" sized to the printable area of a landscape letter sheet:
+              Full page = 1056 px (11 in × 96 dpi).
+              Left/right margins = 57 px (1.5 cm × 96 dpi).
+              Top/bottom margins = 46 px (1.2 cm × 96 dpi). */}
+          <div
+            className={`bg-white text-[12px] text-gray-900 ${
+              isPreview ? 'mx-auto shadow-2xl' : 'mx-auto max-w-[1200px] px-6 py-8'
+            }`}
+            style={
+              isPreview
+                ? { width: '1056px', paddingLeft: '57px', paddingRight: '57px', paddingTop: '46px', paddingBottom: '46px' }
+                : {}
+            }
+          >
+          <>
 
         {/* ── Report Header ── */}
         <div className="mb-6 flex items-start justify-between border-b-2 border-gray-800 pb-4">
@@ -249,13 +273,13 @@ export default async function PrintReportPage({
           <thead>
             <tr className="border-b-2 border-gray-800 bg-gray-100">
               <Th w="3%">#</Th>
-              <Th w="52%" align="left">Task / Sub-tasks</Th>
-              <Th w="9%" align="left">Location</Th>
-              <Th w="8%" align="left">Assignee / Contractor</Th>
-              <Th w="4%">Pri</Th>
-              <Th w="4%">Status</Th>
-              <Th w="7%" align="right">Labor</Th>
-              <Th w="7%" align="right">Equip</Th>
+              <Th w="60%" align="left">Task / Sub-tasks</Th>
+              <Th w="7%" align="left">Location</Th>
+              <Th w="7%" align="left">Assignee / Contractor</Th>
+              <Th w="3%">Pri</Th>
+              <Th w="3%">Status</Th>
+              <Th w="6%" align="right">Labor</Th>
+              <Th w="5%" align="right">Equip</Th>
               <Th w="6%" align="right">Total</Th>
             </tr>
           </thead>
@@ -304,8 +328,10 @@ export default async function PrintReportPage({
           Oakwood University Church — tasks.oucsda.org — Confidential
         </div>
 
-        </>)}
-      </div>
+          </>
+          </div>
+        </div>
+      )}
     </>
   );
 }
