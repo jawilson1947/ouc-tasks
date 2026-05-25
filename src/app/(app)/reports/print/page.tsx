@@ -273,7 +273,7 @@ export default async function PrintReportPage({
           <thead>
             <tr className="border-b-2 border-gray-800 bg-gray-100">
               <Th w="3%">#</Th>
-              <Th w="60%" align="left">Task / Sub-tasks</Th>
+              <Th w="30%" align="left">Task / Sub-tasks</Th>
               <Th w="7%" align="left">Location</Th>
               <Th w="7%" align="left">Assignee / Contractor</Th>
               <Th w="3%">Pri</Th>
