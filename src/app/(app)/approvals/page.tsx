@@ -78,6 +78,7 @@ export default async function ApprovalsPage({
         { count: 'exact' }
       )
       .not('requested_approval_at', 'is', null)
+      .neq('status', 'blocked')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false })
       .range(from, to),
