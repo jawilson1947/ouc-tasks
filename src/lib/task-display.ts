@@ -9,8 +9,14 @@ export const STATUS_LABEL: Record<string, string> = {
   in_progress: 'In Progress',
   blocked:     'Blocked',
   done:        'Done',
+  closed:      'Closed',
 };
 
+/**
+ * Active statuses shown as board columns, My Tasks groups, and filter chips.
+ * 'closed' is intentionally omitted — closed tasks are hidden from all
+ * standard listings and only surface via the Formal Task Report filter.
+ */
 export const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done'] as const;
 
 export const STATUS_COLOR: Record<string, string> = {
@@ -18,6 +24,7 @@ export const STATUS_COLOR: Record<string, string> = {
   in_progress: 'text-status-prog',
   blocked:     'text-status-blocked',
   done:        'text-status-done',
+  closed:      'text-status-closed',
 };
 
 export const STATUS_DOT: Record<string, string> = {
@@ -25,6 +32,7 @@ export const STATUS_DOT: Record<string, string> = {
   in_progress: 'bg-status-prog',
   blocked:     'bg-status-blocked',
   done:        'bg-status-done',
+  closed:      'bg-status-closed',
 };
 
 export const STATUS_PILL: Record<string, string> = {
@@ -32,6 +40,7 @@ export const STATUS_PILL: Record<string, string> = {
   in_progress: 'bg-status-prog/12 text-status-prog',
   blocked:     'bg-status-blocked/12 text-status-blocked',
   done:        'bg-status-done/12 text-status-done',
+  closed:      'bg-status-closed/12 text-status-closed',
 };
 
 export const PRIORITY_BG: Record<number, string> = {

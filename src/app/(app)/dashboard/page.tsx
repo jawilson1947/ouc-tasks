@@ -18,6 +18,7 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'In Progress',
   blocked:     'Blocked',
   done:        'Done',
+  closed:      'Closed',
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -25,6 +26,7 @@ const STATUS_COLOR: Record<string, string> = {
   in_progress: 'text-status-prog',
   blocked:     'text-status-blocked',
   done:        'text-status-done',
+  closed:      'text-status-closed',
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -32,6 +34,7 @@ const STATUS_DOT: Record<string, string> = {
   in_progress: 'bg-status-prog',
   blocked:     'bg-status-blocked',
   done:        'bg-status-done',
+  closed:      'bg-status-closed',
 };
 
 const PRIORITY_BG: Record<number, string> = {
@@ -89,6 +92,7 @@ export default async function DashboardPage() {
     supabase
       .from('task_with_totals')
       .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, approved_at')
+      .neq('status', 'closed')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false }),
     supabase.from('category').select('id, name'),

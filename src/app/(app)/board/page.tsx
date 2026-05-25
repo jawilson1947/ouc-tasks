@@ -44,6 +44,7 @@ export default async function BoardPage() {
       .select(
         'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at'
       )
+      .neq('status', 'closed')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false }),
     supabase.from('category').select('id, name'),

@@ -23,6 +23,7 @@ export const VALID_STATUSES = new Set([
   'in_progress',
   'blocked',
   'done',
+  'closed',
 ]);
 
 export function readForm(formData: FormData): TaskFormFields {

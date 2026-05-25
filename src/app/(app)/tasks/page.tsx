@@ -19,15 +19,21 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'In Progress',
   blocked:     'Blocked',
   done:        'Done',
+  closed:      'Closed',
 };
 
-const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+/**
+ * All status values shown as filter chips (includes 'closed' for explicit
+ * opt-in filtering). Active statuses shown by default exclude 'closed'.
+ */
+const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done', 'closed'] as const;
 
 const STATUS_COLOR: Record<string, string> = {
   not_started: 'text-status-not',
   in_progress: 'text-status-prog',
   blocked:     'text-status-blocked',
   done:        'text-status-done',
+  closed:      'text-status-closed',
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -35,6 +41,7 @@ const STATUS_DOT: Record<string, string> = {
   in_progress: 'bg-status-prog',
   blocked:     'bg-status-blocked',
   done:        'bg-status-done',
+  closed:      'bg-status-closed',
 };
 
 const PRIORITY_BG: Record<number, string> = {
@@ -155,9 +162,19 @@ export default async function TasksPage({
   if (params.q && params.q.trim()) {
     q = q.ilike('title', `%${params.q.trim()}%`);
   }
-  if (params.status && STATUS_ORDER.includes(params.status as typeof STATUS_ORDER[number])) {
-    q = q.eq('status', params.status);
+
+  // Closed tasks are hidden from all standard views. The user can explicitly
+  // opt in by selecting the "Closed" filter chip (?status=closed). Any other
+  // status filter shows only that status (and still excludes closed).
+  if (params.status === 'closed') {
+    q = q.eq('status', 'closed');
+  } else {
+    q = q.neq('status', 'closed');
+    if (params.status && STATUS_ORDER.includes(params.status as typeof STATUS_ORDER[number])) {
+      q = q.eq('status', params.status);
+    }
   }
+
   if (params.priority && /^[1-5]$/.test(params.priority)) {
     q = q.eq('priority', Number(params.priority));
   }

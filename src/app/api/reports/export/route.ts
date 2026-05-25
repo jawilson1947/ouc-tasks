@@ -20,8 +20,9 @@ const STATUS_LABEL: Record<string, string> = {
   in_progress: 'In Progress',
   blocked:     'Blocked',
   done:        'Done',
+  closed:      'Closed',
 };
-const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done'];
+const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done', 'closed'];
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -45,6 +46,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from('task_with_totals')
         .select('legacy_id, title, status, priority, category_id, location_id, assignee_id, contractor_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, created_at, updated_at')
+        .neq('status', 'closed')
         .order('legacy_id'),
       supabase.from('category').select('id, name'),
       supabase.from('location').select('id, name'),
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
   // ---------------------------------------------------------------------------
   if (type === 'summary') {
     const [{ data: tasks }, { data: cats }, { data: locs }] = await Promise.all([
-      supabase.from('task_with_totals').select('priority, status, category_id, location_id, total_cost'),
+      supabase.from('task_with_totals').select('priority, status, category_id, location_id, total_cost').neq('status', 'closed'),
       supabase.from('category').select('id, name').order('sort_order'),
       supabase.from('location').select('id, name'),
     ]);

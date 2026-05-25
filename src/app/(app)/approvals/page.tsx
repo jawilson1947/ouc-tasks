@@ -79,6 +79,7 @@ export default async function ApprovalsPage({
       )
       .not('requested_approval_at', 'is', null)
       .neq('status', 'blocked')
+      .neq('status', 'closed')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false })
       .range(from, to),

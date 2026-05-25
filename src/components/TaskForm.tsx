@@ -46,6 +46,7 @@ const STATUSES: { value: string; label: string }[] = [
   { value: 'in_progress', label: 'In Progress' },
   { value: 'blocked',     label: 'Blocked'     },
   { value: 'done',        label: 'Done'         },
+  { value: 'closed',      label: 'Closed'       },
 ];
 
 const PRIORITIES = [

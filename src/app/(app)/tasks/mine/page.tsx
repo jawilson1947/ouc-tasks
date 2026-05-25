@@ -64,6 +64,7 @@ export default async function MyTasksPage({
         { count: 'exact' }
       )
       .eq('assignee_id', user.id)
+      .neq('status', 'closed')
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false })
       .range(from, to),

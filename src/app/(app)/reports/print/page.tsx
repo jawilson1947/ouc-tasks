@@ -54,6 +54,7 @@ const STATUS_SHORT: Record<string, string> = {
   in_progress: 'IP',
   blocked:     'BL',
   done:        'DN',
+  closed:      'CL',
 };
 
 const STATUS_SYMBOL: Record<string, string> = {
@@ -61,6 +62,7 @@ const STATUS_SYMBOL: Record<string, string> = {
   in_progress: '▶',
   blocked:     '✖',
   done:        '✓',
+  closed:      '⊗',
 };
 
 function usd(n: number | null | undefined) {
@@ -86,7 +88,7 @@ import PrintControlsClient from './PrintControlsClient';
  * task.status enum values; 'approved' is a special filter that matches
  * any task with approved_at IS NOT NULL (regardless of status).
  */
-const ALL_FILTERS = ['not_started', 'in_progress', 'blocked', 'done', 'approved'] as const;
+const ALL_FILTERS = ['not_started', 'in_progress', 'blocked', 'done', 'closed', 'approved'] as const;
 type FilterValue = (typeof ALL_FILTERS)[number];
 
 export default async function PrintReportPage({
@@ -182,6 +184,7 @@ export default async function PrintReportPage({
     in_progress: 'In Progress',
     blocked:     'Blocked',
     done:        'Done',
+    closed:      'Closed',
     approved:    'Approved',
   };
   const filterLabel = activeStatuses.map((s) => STATUS_LABEL_FULL[s] ?? s).join(', ');
