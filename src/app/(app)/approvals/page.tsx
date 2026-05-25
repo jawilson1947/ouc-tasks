@@ -77,7 +77,7 @@ export default async function ApprovalsPage({
         'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, requested_approval_at, subtask_count, subtask_done_count',
         { count: 'exact' }
       )
-      .neq('status', 'done')
+      .not('requested_approval_at', 'is', null)
       .order('priority', { ascending: false })
       .order('due_date', { ascending: true, nullsFirst: false })
       .range(from, to),
@@ -117,10 +117,10 @@ export default async function ApprovalsPage({
           </h1>
           <div className="text-[13.5px] text-ouc-text-muted">
             {total === 0 ? (
-              <>No tasks not yet Done &middot; the queue is clear.</>
+              <>No tasks awaiting approval &middot; the queue is clear.</>
             ) : (
               <>
-                Showing {showingFrom}&ndash;{showingTo} of {total} task{total === 1 ? '' : 's'} not yet Done
+                Showing {showingFrom}&ndash;{showingTo} of {total} task{total === 1 ? '' : 's'} awaiting approval
                 {totalPages > 1 && <> &middot; page {currentPage} of {totalPages}</>}
                 {' '}&middot; sorted by priority
               </>
@@ -152,7 +152,7 @@ export default async function ApprovalsPage({
       <div className="rounded-[10px] border border-ouc-border bg-white px-5 py-4 shadow-sm">
         {tasks.length === 0 ? (
           <div className="py-8 text-center text-sm text-ouc-text-muted">
-            Nothing to approve — every open task has been signed off.
+            Nothing to approve — no tasks have requested approval yet.
           </div>
         ) : (
           <table className="w-full border-collapse text-[13px]">
