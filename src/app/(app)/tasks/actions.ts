@@ -158,6 +158,12 @@ export async function updateTask(formData: FormData) {
     }
   }
 
+  // When a task is set to Blocked, clear all approval data so it must go
+  // through the approval process again once the block is resolved.
+  const approvalClear = fields.status === 'blocked'
+    ? { approved_at: null, approved_by: null, requested_approval_at: null }
+    : {};
+
   const { error } = await supabase
     .from('task')
     .update({
@@ -171,6 +177,7 @@ export async function updateTask(formData: FormData) {
       assignee_id: fields.assignee_id,
       due_date: fields.due_date,
       notes: fields.notes,
+      ...approvalClear,
     })
     .eq('id', id);
 

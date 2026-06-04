@@ -94,9 +94,11 @@ type FilterValue = (typeof ALL_FILTERS)[number];
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string; status?: string }>;
+  searchParams: Promise<{ preview?: string; status?: string; summary?: string; exclude_notes?: string }>;
 }) {
-  const { preview, status: statusParam } = await searchParams;
+  const { preview, status: statusParam, summary: summaryParam, exclude_notes: excludeNotesParam } = await searchParams;
+  const isSummary    = summaryParam      === '1';
+  const excludeNotes = excludeNotesParam === '1';
   const isPreview = preview === '1';
 
   const activeStatuses: FilterValue[] = statusParam
@@ -141,7 +143,7 @@ export default async function PrintReportPage({
 
     const [
       { data: tasksData },
-      { data: subtasksData },
+      subtasksResult,
       { data: locs },
       { data: users },
       { data: contractors },
@@ -149,11 +151,14 @@ export default async function PrintReportPage({
       taskQuery
         .order('priority', { ascending: false })
         .order('legacy_id', { ascending: true }),
-      supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
+      isSummary
+        ? Promise.resolve({ data: [] })
+        : supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
       supabase.from('location').select('id, name'),
       supabase.from('user_profile').select('id, full_name'),
       supabase.from('contractor').select('id, business_name'),
     ]);
+    const subtasksData = subtasksResult.data;
 
     locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
     userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
@@ -199,7 +204,23 @@ export default async function PrintReportPage({
 
       {/* Global print styles — sets landscape, hides browser chrome */}
       <style>{`
-        @page { size: letter landscape; margin: 1.5cm 1.2cm; }
+        @page {
+          size: letter landscape;
+          margin: 1.5cm 1.2cm 2cm 1.2cm;
+
+          @bottom-left {
+            content: "NS = Not Started \\00B7  IP = In Progress \\00B7  BL = Blocked \\00B7  DN = Done \\00B7  CL = Closed";
+            font-size: 8pt;
+            font-family: 'Times New Roman', Times, serif;
+            color: #9ca3af;
+          }
+          @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-size: 8pt;
+            font-family: 'Times New Roman', Times, serif;
+            color: #9ca3af;
+          }
+        }
         @media print {
           aside, nav, header, .no-print { display: none !important; }
           body { font-family: 'Times New Roman', Times, serif; }
@@ -210,7 +231,7 @@ export default async function PrintReportPage({
 
       {/* Filter controls — outside the page simulation, never printed */}
       <div className="no-print mx-auto max-w-[1200px] px-6 py-4">
-        <PrintControlsClient activeStatuses={activeStatuses} isPreview={isPreview} reportReady={reportReady} />
+        <PrintControlsClient activeStatuses={activeStatuses} isPreview={isPreview} reportReady={reportReady} isSummary={isSummary} excludeNotes={excludeNotes} />
       </div>
 
       {reportReady && (
@@ -276,7 +297,7 @@ export default async function PrintReportPage({
           <thead>
             <tr className="border-b-2 border-gray-800 bg-gray-100">
               <Th w="3%">#</Th>
-              <Th w="30%" align="left">Task / Sub-tasks</Th>
+              <Th w="30%">{isSummary ? 'Task' : 'Task / Sub-tasks'}</Th>
               <Th w="7%" align="left">Location</Th>
               <Th w="7%" align="left">Assignee / Contractor</Th>
               <Th w="3%">Pri</Th>
@@ -295,6 +316,8 @@ export default async function PrintReportPage({
                 locMap={locMap}
                 userMap={userMap}
                 conMap={conMap}
+                summary={isSummary}
+                showNotes={!excludeNotes}
               />
             ))}
           </tbody>
@@ -326,8 +349,8 @@ export default async function PrintReportPage({
           <span>✓ Done</span>
         </div>
 
-        {/* Print-only footer */}
-        <div className="mt-6 hidden border-t border-gray-300 pt-3 text-center text-[10px] text-gray-400 print:block">
+        {/* Confidential footer — on-screen only; print footer rendered via @page margin boxes */}
+        <div className="no-print mt-6 border-t border-gray-300 pt-3 text-center text-[10px] text-gray-400">
           Oakwood University Church — tasks.oucsda.org — Confidential
         </div>
 
@@ -343,13 +366,15 @@ export default async function PrintReportPage({
 // Task row block (task + nested subtasks)
 // ---------------------------------------------------------------------------
 function TaskBlock({
-  task, idx, locMap, userMap, conMap,
+  task, idx, locMap, userMap, conMap, summary = false, showNotes = false,
 }: {
   task: Task;
   idx: number;
   locMap: Map<number, string>;
   userMap: Map<string, string>;
   conMap: Map<string, string>;
+  summary?: boolean;
+  showNotes?: boolean;
 }) {
   const isEven    = idx % 2 === 0;
   const rowBg     = isEven ? 'bg-white' : 'bg-gray-50';
@@ -367,7 +392,7 @@ function TaskBlock({
       {/* Task title + subtasks */}
       <td className="px-2 py-1.5">
         <div className="font-bold text-gray-900">{task.title}</div>
-        {task.notes && (
+        {showNotes && task.notes && (
           <div className="mt-0.5 text-[10.5px] italic text-gray-500">{task.notes}</div>
         )}
         {task.due_date && (
@@ -375,8 +400,8 @@ function TaskBlock({
             Due: {fmtDateLong(task.due_date)}
           </div>
         )}
-        {/* Subtasks */}
-        {task.subtasks.length > 0 && (
+        {/* Subtasks — hidden in summary mode */}
+        {!summary && task.subtasks.length > 0 && (
           <div className="mt-1.5 flex flex-col gap-0.5 border-l-2 border-gray-300 pl-2.5">
             {task.subtasks.map((s) => (
               <div key={s.id} className="flex items-start gap-1.5">
