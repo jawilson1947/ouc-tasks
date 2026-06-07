@@ -10,7 +10,7 @@
  *   an inline link that opens a modal. The value is written back to a hidden
  *   <input name="notes"> so the server action receives it unchanged.
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { fmtTimestamp } from '@/lib/format';
 
@@ -135,6 +135,55 @@ function NotesModal({
 }
 
 // ---------------------------------------------------------------------------
+// Notify confirmation modal (edit-only)
+// ---------------------------------------------------------------------------
+function NotifyConfirmModal({
+  onConfirm,
+  onSkip,
+}: {
+  /** Called when the user clicks "Yes, send notification". */
+  onConfirm: () => void;
+  /** Called when the user clicks "No, just save". */
+  onSkip: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl">
+        {/* Header */}
+        <div className="border-b border-ouc-border px-5 py-3.5">
+          <h2 className="text-[14px] font-bold text-ouc-primary">Notify assignee?</h2>
+        </div>
+
+        {/* Body */}
+        <div className="px-5 py-4">
+          <p className="text-[13px] text-ouc-text">
+            Would you like to send an email notification to the assignee about this update?
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 border-t border-ouc-border px-5 py-3.5">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="rounded-md border border-ouc-border bg-white px-3.5 py-1.5 text-[12.5px] font-medium text-ouc-text hover:bg-ouc-surface-alt"
+          >
+            No, just save
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-md bg-ouc-primary px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-ouc-primary-hover"
+          >
+            Yes, send notification
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main form
 // ---------------------------------------------------------------------------
 export function TaskForm({
@@ -169,6 +218,21 @@ export function TaskForm({
   const [notesText, setNotesText] = useState(defaults.notes ?? '');
   const [modalOpen, setModalOpen] = useState(false);
 
+  // ── Notify-assignee confirmation (edit mode only) ──────────────────────
+  const [notifyModalOpen, setNotifyModalOpen] = useState(false);
+  const notifyInputRef = useRef<HTMLInputElement>(null);
+  // Holds the pending submit action so we can fire it after the modal resolves.
+  const pendingSubmitRef = useRef<(() => void) | null>(null);
+  // Tracks the currently selected assignee_id so we know whether to show the modal.
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState(defaults.assignee_id ?? '');
+
+  const submitWithNotify = useCallback((notify: 'yes' | 'no') => {
+    if (notifyInputRef.current) notifyInputRef.current.value = notify;
+    setNotifyModalOpen(false);
+    pendingSubmitRef.current?.();
+    pendingSubmitRef.current = null;
+  }, []);
+
   const activeContractors   = contractors.filter((c) => c.active);
   const currentContractor   = defaults.contractor_id
     ? contractors.find((c) => c.id === defaults.contractor_id)
@@ -185,6 +249,24 @@ export function TaskForm({
       <form
         action={action}
         className="rounded-[10px] border border-ouc-border bg-white px-4 py-4 shadow-sm"
+        onSubmit={
+          isEdit
+            ? (e) => {
+                // Only intercept when an assignee is selected; otherwise pass through.
+                if (!selectedAssigneeId) return;
+                e.preventDefault();
+                const form = e.currentTarget;
+                // Store a closure that submits via the server action using requestSubmit.
+                // We bypass onSubmit on the second call by temporarily removing the handler.
+                pendingSubmitRef.current = () => {
+                  // Remove the interceptor so the second submit goes straight through.
+                  form.onsubmit = null;
+                  form.requestSubmit();
+                };
+                setNotifyModalOpen(true);
+              }
+            : undefined
+        }
       >
         {isEdit && defaults.id && <input type="hidden" name="id" value={defaults.id} />}
         {isEdit && defaults.legacy_id != null && (
@@ -192,6 +274,8 @@ export function TaskForm({
         )}
         {/* Notes value — written by modal, read by server action */}
         <input type="hidden" name="notes" value={notesText} />
+        {/* Notify-assignee flag — set by the confirmation modal (edit mode only) */}
+        {isEdit && <input type="hidden" name="notify_assignee" ref={notifyInputRef} defaultValue="no" />}
 
         {/* ── Task ── */}
         <fieldset className="mb-3">
@@ -293,7 +377,12 @@ export function TaskForm({
             </select>
           </Field>
           <Field label="Assignee">
-            <select name="assignee_id" defaultValue={defaults.assignee_id ?? ''} className={INPUT}>
+            <select
+              name="assignee_id"
+              defaultValue={defaults.assignee_id ?? ''}
+              className={INPUT}
+              onChange={(e) => setSelectedAssigneeId(e.target.value)}
+            >
               <option value="">— Unassigned —</option>
               {activeAssignees.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -357,6 +446,14 @@ export function TaskForm({
           initialValue={notesText}
           onSave={setNotesText}
           onClose={() => setModalOpen(false)}
+        />
+      )}
+
+      {/* Notify-assignee confirmation modal — edit mode only */}
+      {notifyModalOpen && (
+        <NotifyConfirmModal
+          onConfirm={() => submitWithNotify('yes')}
+          onSkip={() => submitWithNotify('no')}
         />
       )}
     </>

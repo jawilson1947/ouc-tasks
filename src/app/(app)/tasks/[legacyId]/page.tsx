@@ -14,7 +14,6 @@ import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { fmtDateLong, fmtTimestamp } from '@/lib/format';
-import { linkifyDescription } from '@/lib/linkify-description';
 
 const STATUS_LABEL: Record<string, string> = {
   not_started: 'Not Started',
@@ -248,7 +247,7 @@ export default async function TaskDetailPage({
           {/* Description */}
           <Card title="Description">
             {task.description ? (
-              <p className="text-[13.5px] text-ouc-text">{linkifyDescription(task.description)}</p>
+              <p className="text-[13.5px] text-ouc-text">{task.description}</p>
             ) : (
               <p className="text-[13.5px] italic text-ouc-text-muted">
                 No description provided.

@@ -18,6 +18,10 @@ import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { readForm, validate } from './form-helpers';
 import { sendTaskDoneEmail } from '@/lib/email/sendTaskDoneEmail';
+import {
+  sendTaskAssignedEmail,
+  sendTaskUpdatedEmail,
+} from '@/lib/email/sendTaskAssignedEmail';
 
 const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor', 'approver']);
 
@@ -88,6 +92,31 @@ export async function createTask(formData: FormData) {
   revalidatePath('/tasks');
   revalidatePath('/dashboard');
   revalidatePath('/board');
+
+  // Notify the assignee that they've been assigned this task.
+  // Best-effort: DB write already committed, so we never block the redirect.
+  if (fields.assignee_id && created) {
+    (async () => {
+      const { data: assignee } = await supabase
+        .from('user_profile')
+        .select('email, full_name')
+        .eq('id', fields.assignee_id!)
+        .maybeSingle();
+      if (assignee?.email) {
+        await sendTaskAssignedEmail({
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.full_name ?? null,
+          taskTitle: fields.title ?? '',
+          taskLegacyId: created.legacy_id,
+          dueDate: fields.due_date ?? null,
+          priority: fields.priority ?? null,
+        });
+      }
+    })().catch((e) =>
+      console.error('[email] task-assigned threw unexpectedly:', e)
+    );
+  }
+
   redirect(`/tasks/${created.legacy_id}?created=1`);
 }
 
@@ -102,6 +131,7 @@ export async function updateTask(formData: FormData) {
 
   const id = String(formData.get('id') ?? '').trim();
   const legacyIdRaw = String(formData.get('legacy_id') ?? '').trim();
+  const notifyAssignee = String(formData.get('notify_assignee') ?? '') === 'yes';
   if (!id) redirect('/tasks?error=Missing+task+id');
 
   const fields = readForm(formData);
@@ -183,6 +213,31 @@ export async function updateTask(formData: FormData) {
 
   if (error) {
     redirect(`/tasks/${legacyIdRaw}/edit?error=${encodeURIComponent(error.message)}`);
+  }
+
+  // If the editor chose to notify the assignee, send them an update email.
+  // Best-effort: DB write already committed.
+  if (notifyAssignee && fields.assignee_id && existing) {
+    (async () => {
+      const { data: assignee } = await supabase
+        .from('user_profile')
+        .select('email, full_name')
+        .eq('id', fields.assignee_id!)
+        .maybeSingle();
+      if (assignee?.email) {
+        await sendTaskUpdatedEmail({
+          assigneeEmail: assignee.email,
+          assigneeName: assignee.full_name ?? null,
+          taskTitle: fields.title ?? '',
+          taskLegacyId: existing.legacy_id,
+          dueDate: fields.due_date ?? null,
+          priority: fields.priority ?? null,
+          updatedByName: fullName?.trim() || null,
+        });
+      }
+    })().catch((e) =>
+      console.error('[email] task-updated threw unexpectedly:', e)
+    );
   }
 
   // If the task just became Done, email all active approvers and admins.
