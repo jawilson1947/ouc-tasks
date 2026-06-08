@@ -90,13 +90,44 @@ import PageNumberClient from './PageNumberClient';
 const ALL_FILTERS = ['not_started', 'in_progress', 'blocked', 'done', 'approved'] as const;
 type FilterValue = (typeof ALL_FILTERS)[number];
 
+const VALID_SORTS = ['legacy_id', 'priority', 'status', 'location', 'category', 'cost'] as const;
+type SortKey = (typeof VALID_SORTS)[number];
+
+function sortTasks(
+  tasks: Task[],
+  sort: SortKey,
+  dir: 'asc' | 'desc',
+  locMap: Map<number, string>,
+  catMap: Map<number, string>,
+): Task[] {
+  const sign = dir === 'asc' ? 1 : -1;
+  return [...tasks].sort((a, b) => {
+    let cmp = 0;
+    switch (sort) {
+      case 'legacy_id': cmp = a.legacy_id - b.legacy_id; break;
+      case 'priority':  cmp = a.priority  - b.priority;  break;
+      case 'status':    cmp = a.status.localeCompare(b.status); break;
+      case 'location':
+        cmp = (locMap.get(a.location_id ?? 0) ?? '').localeCompare(locMap.get(b.location_id ?? 0) ?? '');
+        break;
+      case 'category':
+        cmp = (catMap.get(a.category_id ?? 0) ?? '').localeCompare(catMap.get(b.category_id ?? 0) ?? '');
+        break;
+      case 'cost': cmp = a.total_cost - b.total_cost; break;
+    }
+    return cmp * sign;
+  });
+}
+
 export default async function PrintReportPage({
   searchParams,
 }: {
-  searchParams: Promise<{ preview?: string; status?: string }>;
+  searchParams: Promise<{ preview?: string; status?: string; sort?: string; dir?: string }>;
 }) {
-  const { preview, status: statusParam } = await searchParams;
+  const { preview, status: statusParam, sort: sortRaw, dir: dirRaw } = await searchParams;
   const isPreview = preview === '1';
+  const sort: SortKey = VALID_SORTS.includes(sortRaw as SortKey) ? (sortRaw as SortKey) : 'priority';
+  const dir: 'asc' | 'desc' = dirRaw === 'asc' ? 'asc' : 'desc';
 
   const activeStatuses: FilterValue[] = statusParam
     ? (statusParam.split(',').filter((s) =>
@@ -115,6 +146,7 @@ export default async function PrintReportPage({
   // Only fetch data once the user has chosen statuses
   let tasks: Task[] = [];
   let locMap = new Map<number, string>();
+  let catMap = new Map<number, string>();
   let userMap = new Map<string, string>();
   let conMap = new Map<string, string>();
   let grandTotal = 0;
@@ -142,19 +174,20 @@ export default async function PrintReportPage({
       { data: tasksData },
       { data: subtasksData },
       { data: locs },
+      { data: cats },
       { data: users },
       { data: contractors },
     ] = await Promise.all([
-      taskQuery
-        .order('priority', { ascending: false })
-        .order('legacy_id', { ascending: true }),
+      taskQuery.order('legacy_id', { ascending: true }),
       supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
       supabase.from('location').select('id, name'),
+      supabase.from('category').select('id, name'),
       supabase.from('user_profile').select('id, full_name'),
       supabase.from('contractor').select('id, business_name'),
     ]);
 
     locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
+    catMap  = new Map((cats  ?? []).map((c) => [c.id, c.name]));
     userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
     conMap  = new Map((contractors ?? []).map((c) => [c.id, c.business_name]));
 
@@ -165,7 +198,7 @@ export default async function PrintReportPage({
       subMap.set(s.task_id, arr);
     }
 
-    tasks = (tasksData ?? []).map((t) => ({
+    const rawTasks = (tasksData ?? []).map((t) => ({
       ...t,
       total_labor_cost:     Number(t.total_labor_cost),
       total_equipment_cost: Number(t.total_equipment_cost),
@@ -173,6 +206,7 @@ export default async function PrintReportPage({
       subtasks:             subMap.get(t.id) ?? [],
     }));
 
+    tasks = sortTasks(rawTasks, sort, dir, locMap, catMap);
     grandTotal = tasks.reduce((s, t) => s + t.total_cost, 0);
   }
 
@@ -232,7 +266,13 @@ export default async function PrintReportPage({
       <div id="print-content" className="mx-auto max-w-[1200px] bg-white px-6 py-8 text-[12px] text-gray-900">
 
         {/* Filter controls — always visible on screen */}
-        <PrintControlsClient activeStatuses={activeStatuses} isPreview={isPreview} reportReady={reportReady} />
+        <PrintControlsClient
+          activeStatuses={activeStatuses}
+          isPreview={isPreview}
+          reportReady={reportReady}
+          sort={sort}
+          dir={dir}
+        />
 
         {/* ── Report (only shown once statuses are selected) ── */}
         {reportReady && (<>
