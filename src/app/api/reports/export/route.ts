@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
 
 const BOM = '\uFEFF'; // UTF-8 BOM — prevents Excel on Windows mangling accented characters
 
@@ -25,8 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 const STATUS_ORDER = ['not_started', 'in_progress', 'blocked', 'done', 'closed'];
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
   const type  = request.nextUrl.searchParams.get('type') ?? 'tasks';
@@ -36,28 +36,39 @@ export async function GET(request: NextRequest) {
   // CSV Option 1 — Full Task List
   // ---------------------------------------------------------------------------
   if (type === 'tasks') {
-    const [
-      { data: tasks },
-      { data: cats },
-      { data: locs },
-      { data: users },
-      { data: contractors },
-    ] = await Promise.all([
-      supabase
-        .from('task_with_totals')
-        .select('legacy_id, title, status, priority, category_id, location_id, assignee_id, contractor_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, created_at, updated_at')
-        .neq('status', 'closed')
-        .order('legacy_id'),
-      supabase.from('category').select('id, name'),
-      supabase.from('location').select('id, name'),
-      supabase.from('user_profile').select('id, full_name'),
-      supabase.from('contractor').select('id, business_name'),
+    const [tasks, cats, locs, users, contractors] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        where: { status: { not: 'closed' } },
+        orderBy: { legacyId: 'asc' },
+        select: {
+          legacyId: true,
+          title: true,
+          status: true,
+          priority: true,
+          categoryId: true,
+          locationId: true,
+          assigneeId: true,
+          contractorId: true,
+          dueDate: true,
+          totalLaborCost: true,
+          totalEquipmentCost: true,
+          totalCost: true,
+          subtaskCount: true,
+          subtaskDoneCount: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.category.findMany({ select: { id: true, name: true } }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
+      prisma.userProfile.findMany({ select: { id: true, fullName: true } }),
+      prisma.contractor.findMany({ select: { id: true, businessName: true } }),
     ]);
 
-    const catMap  = new Map((cats  ?? []).map((c) => [c.id, c.name]));
-    const locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
-    const userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
-    const conMap  = new Map((contractors ?? []).map((c) => [c.id, c.business_name]));
+    const catMap  = new Map(cats.map((c) => [c.id, c.name]));
+    const locMap  = new Map(locs.map((l) => [l.id, l.name]));
+    const userMap = new Map(users.map((u) => [u.id, u.fullName]));
+    const conMap  = new Map(contractors.map((c) => [c.id, c.businessName]));
 
     const lines = [
       `OUC Infrastructure Tasks — Full Task List — ${today}`,
@@ -66,24 +77,24 @@ export async function GET(request: NextRequest) {
              'Assignee', 'Contractor', 'Due Date',
              'Labor Cost', 'Equipment Cost', 'Total Cost',
              'Sub-tasks', 'Done Sub-tasks', 'Created', 'Updated'),
-      ...(tasks ?? []).map((t) =>
+      ...tasks.map((t) =>
         csvRow(
-          t.legacy_id,
+          t.legacyId,
           t.title,
           STATUS_LABEL[t.status] ?? t.status,
           `P${t.priority}`,
-          catMap.get(t.category_id)  ?? '',
-          locMap.get(t.location_id)  ?? '',
-          userMap.get(t.assignee_id) ?? '',
-          conMap.get(t.contractor_id) ?? '',
-          t.due_date ?? '',
-          Number(t.total_labor_cost).toFixed(2),
-          Number(t.total_equipment_cost).toFixed(2),
-          Number(t.total_cost).toFixed(2),
-          t.subtask_count,
-          t.subtask_done_count,
-          (t.created_at ?? '').slice(0, 10),
-          (t.updated_at ?? '').slice(0, 10),
+          (t.categoryId   != null ? catMap.get(t.categoryId)   : '') ?? '',
+          (t.locationId   != null ? locMap.get(t.locationId)   : '') ?? '',
+          (t.assigneeId   != null ? userMap.get(t.assigneeId)  : '') ?? '',
+          (t.contractorId != null ? conMap.get(t.contractorId) : '') ?? '',
+          t.dueDate ? t.dueDate.toISOString().slice(0, 10) : '',
+          Number(t.totalLaborCost).toFixed(2),
+          Number(t.totalEquipmentCost).toFixed(2),
+          Number(t.totalCost).toFixed(2),
+          Number(t.subtaskCount),
+          Number(t.subtaskDoneCount),
+          t.createdAt.toISOString().slice(0, 10),
+          t.updatedAt.toISOString().slice(0, 10),
         )
       ),
     ];
@@ -100,13 +111,31 @@ export async function GET(request: NextRequest) {
   // CSV Option 2 — Report Summary (4 sections)
   // ---------------------------------------------------------------------------
   if (type === 'summary') {
-    const [{ data: tasks }, { data: cats }, { data: locs }] = await Promise.all([
-      supabase.from('task_with_totals').select('priority, status, category_id, location_id, total_cost').neq('status', 'closed'),
-      supabase.from('category').select('id, name').order('sort_order'),
-      supabase.from('location').select('id, name'),
+    const [tasks, cats, locs] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        where: { status: { not: 'closed' } },
+        select: {
+          priority: true,
+          status: true,
+          categoryId: true,
+          locationId: true,
+          totalCost: true,
+        },
+      }),
+      prisma.category.findMany({
+        select: { id: true, name: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
     ]);
 
-    const list = tasks ?? [];
+    const list = tasks.map((t) => ({
+      priority: t.priority,
+      status: t.status as string,
+      category_id: t.categoryId,
+      location_id: t.locationId,
+      total_cost: Number(t.totalCost),
+    }));
     const grand = list.reduce((s, t) => s + Number(t.total_cost), 0);
 
     function agg<K>(keyFn: (t: (typeof list)[0]) => K) {

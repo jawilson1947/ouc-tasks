@@ -5,32 +5,31 @@
  *
  * createContractor, updateContractor, deleteContractor.
  *
- * Authorization: admin can do anything; editor can create freely and
- * edit/delete only contractors they created. Viewer is blocked.
- * RLS enforces this at the database level; we duplicate the role gate
- * here so error messages are friendlier than "Postgres denied that".
+ * Authorization: admin or editor may manage contractors; viewer is blocked.
+ * MySQL has no RLS, so this role gate (from the session JWT) is the ONLY
+ * access control — every action checks it before touching Prisma.
  */
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { requireRole, type SessionUser } from '@/lib/auth';
 
-const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor']);
-
-async function requireWriter() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated.');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  const role = profile?.role ?? '';
-  if (!ROLES_THAT_CAN_WRITE.has(role)) {
+async function requireWriter(): Promise<{ userId: string; role: string }> {
+  let user: SessionUser;
+  try {
+    user = await requireRole('admin', 'editor');
+  } catch (e) {
+    if ((e as Error).message === 'Not authenticated') {
+      throw new Error('Not authenticated.');
+    }
     throw new Error('You need admin or editor role to manage contractors.');
   }
-  return { supabase, userId: user.id, role };
+  return { userId: user.id, role: user.role };
+}
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : 'Unexpected error.';
 }
 
 function readForm(formData: FormData) {
@@ -42,77 +41,77 @@ function readForm(formData: FormData) {
   };
 
   return {
-    business_name:        get('business_name'),
-    primary_first_name:   get('primary_first_name'),
-    primary_last_name:    get('primary_last_name'),
-    primary_email:        get('primary_email'),
-    primary_phone:        get('primary_phone'),
-    address_line1:        get('address_line1'),
-    address_line2:        get('address_line2'),
-    city:                 get('city'),
-    state:                get('state'),
-    zipcode:              get('zipcode'),
-    business_phone:       get('business_phone'),
-    notes:                get('notes'),
+    businessName:     get('business_name'),
+    primaryFirstName: get('primary_first_name'),
+    primaryLastName:  get('primary_last_name'),
+    primaryEmail:     get('primary_email'),
+    primaryPhone:     get('primary_phone'),
+    addressLine1:     get('address_line1'),
+    addressLine2:     get('address_line2'),
+    city:             get('city'),
+    state:            get('state'),
+    zipcode:          get('zipcode'),
+    businessPhone:    get('business_phone'),
+    notes:            get('notes'),
   };
 }
 
 export async function createContractor(formData: FormData) {
   let userId: string;
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase, userId } = await requireWriter());
+    ({ userId } = await requireWriter());
   } catch (e) {
-    redirect(`/contractors/new?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/contractors/new?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   const fields = readForm(formData);
-  if (!fields.business_name) {
+  if (!fields.businessName) {
     redirect('/contractors/new?error=Business+name+is+required');
   }
-  if (fields.primary_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fields.primary_email)) {
+  if (fields.primaryEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fields.primaryEmail)) {
     redirect('/contractors/new?error=Primary+email+looks+invalid');
   }
 
-  const { data: created, error } = await supabase
-    .from('contractor')
-    .insert({ ...fields, created_by: userId })
-    .select('id')
-    .single();
-
-  if (error || !created) {
-    redirect(
-      `/contractors/new?error=${encodeURIComponent(error?.message ?? 'Insert failed')}`
-    );
+  let createdId: string;
+  try {
+    const created = await prisma.contractor.create({
+      data: { ...fields, businessName: fields.businessName, createdById: userId },
+      select: { id: true },
+    });
+    createdId = created.id;
+  } catch (e) {
+    redirect(`/contractors/new?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/contractors');
-  redirect(`/contractors/${created.id}/edit?created=1`);
+  redirect(`/contractors/${createdId}/edit?created=1`);
 }
 
 export async function updateContractor(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase } = await requireWriter());
+    await requireWriter();
   } catch (e) {
-    redirect(`/contractors?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/contractors?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   const id = String(formData.get('id') ?? '').trim();
   if (!id) redirect('/contractors?error=Missing+contractor+id');
 
   const fields = readForm(formData);
-  if (!fields.business_name) {
+  if (!fields.businessName) {
     redirect(`/contractors/${id}/edit?error=Business+name+is+required`);
   }
-  if (fields.primary_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fields.primary_email)) {
+  if (fields.primaryEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(fields.primaryEmail)) {
     redirect(`/contractors/${id}/edit?error=Primary+email+looks+invalid`);
   }
 
-  const { error } = await supabase.from('contractor').update(fields).eq('id', id);
-
-  if (error) {
-    redirect(`/contractors/${id}/edit?error=${encodeURIComponent(error.message)}`);
+  try {
+    await prisma.contractor.update({
+      where: { id },
+      data: { ...fields, businessName: fields.businessName },
+    });
+  } catch (e) {
+    redirect(`/contractors/${id}/edit?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/contractors');
@@ -121,19 +120,20 @@ export async function updateContractor(formData: FormData) {
 }
 
 export async function deleteContractor(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase } = await requireWriter());
+    await requireWriter();
   } catch (e) {
-    redirect(`/contractors?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/contractors?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   const id = String(formData.get('id') ?? '').trim();
   if (!id) redirect('/contractors?error=Missing+contractor+id');
 
-  const { error } = await supabase.from('contractor').delete().eq('id', id);
-  if (error) {
-    redirect(`/contractors?error=${encodeURIComponent(error.message)}`);
+  try {
+    // task.contractor_id is ON DELETE SET NULL — linked tasks are unhooked.
+    await prisma.contractor.delete({ where: { id } });
+  } catch (e) {
+    redirect(`/contractors?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/contractors');

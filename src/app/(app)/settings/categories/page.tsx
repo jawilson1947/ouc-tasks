@@ -3,7 +3,7 @@
  */
 import Link from 'next/link';
 import { DeleteButton } from '@/components/DeleteButton';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { deleteCategory } from './actions';
 
 export const metadata = { title: 'Categories — OUC Infrastructure Tasks' };
@@ -16,22 +16,11 @@ export default async function CategoriesPage({
   searchParams: Promise<{ error?: string; created?: string; deleted?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('category')
-    .select('id, name')
-    .order('name');
-
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load categories:</strong> {error.message}
-      </div>
-    );
-  }
-
-  const categories = (data ?? []) as Category[];
+  const categories: Category[] = await prisma.category.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  });
 
   return (
     <div>

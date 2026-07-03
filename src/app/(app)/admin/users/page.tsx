@@ -6,7 +6,8 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { NewUserForm } from './NewUserForm';
 import { UserTableClient } from './UserTableClient';
 
@@ -34,25 +35,18 @@ export default async function UsersAdminPage({
   searchParams: Promise<{ error?: string; deleted?: string; updated?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const me = await getSessionUser();
+  if (!me) redirect('/login');
 
-  const { data: meProfile } = await supabase
-    .from('user_profile')
-    .select('role, full_name')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  const isAdmin = meProfile?.role === 'admin';
+  const isAdmin = me.role === 'admin';
   if (!isAdmin) {
     return (
       <div className="rounded-[10px] border border-ouc-border bg-white px-6 py-10 text-center shadow-sm">
         <h1 className="mb-2 text-2xl font-bold text-ouc-primary">User Management</h1>
         <p className="mx-auto max-w-md text-[13.5px] text-ouc-text-muted">
           You need the <strong>admin</strong> role to manage users. Your current
-          role is <strong>{meProfile?.role ?? '(none)'}</strong>. Ask an existing
+          role is <strong>{me.role ?? '(none)'}</strong>. Ask an existing
           admin to elevate your account.
         </p>
         <Link
@@ -65,13 +59,28 @@ export default async function UsersAdminPage({
     );
   }
 
-  const { data: usersData, error: usersErr } = await supabase
-    .from('user_profile')
-    .select('id, full_name, email, role, active, last_login, created_at')
-    .order('role')
-    .order('full_name');
+  const usersData = await prisma.userProfile.findMany({
+    select: {
+      id: true,
+      fullName: true,
+      email: true,
+      role: true,
+      active: true,
+      lastLogin: true,
+      createdAt: true,
+    },
+    orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
+  });
 
-  const users = (usersData ?? []) as Profile[];
+  const users: Profile[] = usersData.map((u) => ({
+    id: u.id,
+    full_name: u.fullName,
+    email: u.email,
+    role: u.role,
+    active: u.active,
+    last_login: u.lastLogin ? u.lastLogin.toISOString() : null,
+    created_at: u.createdAt.toISOString(),
+  }));
   const errorMessage = params.error
     ? FLASH_ERROR_MESSAGES[params.error] ?? params.error
     : null;
@@ -131,16 +140,12 @@ export default async function UsersAdminPage({
       <section className="rounded-[10px] border border-ouc-border bg-white px-5 py-4 shadow-sm">
         <h2 className="mb-3 text-[15px] font-bold text-ouc-primary">All users</h2>
 
-        {usersErr ? (
-          <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-            Failed to load users: {usersErr.message}
-          </div>
-        ) : users.length === 0 ? (
+        {users.length === 0 ? (
           <div className="py-6 text-center text-sm text-ouc-text-muted">
             No users yet. Add the first one with the form above.
           </div>
         ) : (
-          <UserTableClient users={users} currentUserId={user.id} />
+          <UserTableClient users={users} currentUserId={me.id} />
         )}
       </section>
     </div>

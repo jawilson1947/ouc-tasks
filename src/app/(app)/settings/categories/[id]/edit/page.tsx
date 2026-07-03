@@ -3,7 +3,7 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { DeleteButton } from '@/components/DeleteButton';
 import { updateCategory, deleteCategory } from '../../actions';
 
@@ -19,17 +19,14 @@ export default async function EditCategoryPage({
   const { id: idStr } = await params;
   const sp = await searchParams;
   const id = Number(idStr);
+  if (!Number.isInteger(id)) notFound();
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('category')
-    .select('id, name')
-    .eq('id', id)
-    .maybeSingle();
+  const cat = await prisma.category.findUnique({
+    where: { id },
+    select: { id: true, name: true },
+  });
 
-  if (error || !data) notFound();
-
-  const cat = data as { id: number; name: string };
+  if (!cat) notFound();
 
   return (
     <div>

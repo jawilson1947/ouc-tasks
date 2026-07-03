@@ -1,19 +1,23 @@
+/**
+ * POST /api/receipts/upload — upload a receipt (image or PDF) for a task.
+ *
+ * Storage: Vercel Blob, PRIVATE store. put() uses access:'private' and
+ * addRandomSuffix:false; the returned *pathname* is persisted in
+ * attachment.storage_path and served via the authenticated /api/files route.
+ * Roles allowed to upload receipts: admin, editor.
+ */
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { createClient as createServiceClient } from '@supabase/supabase-js';
+import { del, put } from '@vercel/blob';
+import { getSessionUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
-const BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ?? 'receipts';
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-
-  const { data: profile } = await supabase
-    .from('user_profile').select('role').eq('id', user.id).maybeSingle();
-  if (!['admin', 'editor'].includes(profile?.role ?? ''))
+  if (!['admin', 'editor'].includes(user.role))
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
 
   const fd = await request.formData();
@@ -36,39 +40,45 @@ export async function POST(request: NextRequest) {
   const safe        = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const storagePath = `${user.id}/${taskId}/${Date.now()}-${safe}`;
 
-  const svc = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
-
-  const { error: upErr } = await svc.storage
-    .from(BUCKET)
-    .upload(storagePath, await file.arrayBuffer(), { contentType: file.type });
-  if (upErr) return NextResponse.json({ error: upErr.message }, { status: 500 });
-
-  const { data: att, error: insErr } = await svc
-    .from('attachment')
-    .insert({
-      task_id:        taskId,
-      type:           'receipt',
-      filename:       file.name,
-      storage_path:   storagePath,
-      content_type:   file.type,
-      size_bytes:     file.size,
-      caption:        caption || null,
-      receipt_amount: parseFloat(amountRaw),
-      vendor:         vendor || null,
-      receipt_date:   receiptDate || null,
-      uploaded_by:    user.id,
-    })
-    .select('id, storage_path')
-    .single();
-
-  if (insErr) {
-    await svc.storage.from(BUCKET).remove([storagePath]);
-    return NextResponse.json({ error: insErr.message }, { status: 500 });
+  let blobPathname: string;
+  try {
+    const blob = await put(storagePath, file, {
+      access: 'private',
+      addRandomSuffix: false,
+      contentType: file.type,
+    });
+    blobPathname = blob.pathname;
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Upload failed' },
+      { status: 500 }
+    );
   }
 
-  return NextResponse.json({ id: att.id, storage_path: att.storage_path });
+  try {
+    const att = await prisma.attachment.create({
+      data: {
+        taskId,
+        type: 'receipt',
+        filename: file.name,
+        storagePath: blobPathname,
+        contentType: file.type,
+        sizeBytes: BigInt(file.size),
+        caption: caption || null,
+        receiptAmount: parseFloat(amountRaw),
+        vendor: vendor || null,
+        receiptDate: receiptDate ? new Date(`${receiptDate}T00:00:00.000Z`) : null,
+        uploadedById: user.id,
+      },
+      select: { id: true, storagePath: true },
+    });
+    return NextResponse.json({ id: att.id, storage_path: att.storagePath });
+  } catch (e) {
+    // DB insert failed — don't orphan the blob.
+    await del(blobPathname).catch(() => {});
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Failed to save attachment' },
+      { status: 500 }
+    );
+  }
 }

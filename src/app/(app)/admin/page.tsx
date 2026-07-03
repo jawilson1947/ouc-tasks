@@ -5,7 +5,8 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 import { fmtDateLong } from '@/lib/format';
 
 export const metadata = { title: 'Admin — OUC Infrastructure Tasks' };
@@ -32,44 +33,52 @@ type Category = { id: number; name: string; color_hex: string | null; sort_order
 type Location = { id: number; name: string; building: string | null; sort_order: number };
 
 export default async function AdminPage() {
-  const supabase = await createClient();
+  // Defense-in-depth role check. The role lives in the session JWT — no DB
+  // round-trip. We hide write affordances and gate the page itself.
+  const me = await getSessionUser();
+  if (!me) redirect('/login');
 
-  // Defense-in-depth role check. The schema's RLS lets non-admins read
-  // user_profile, but we hide write affordances and gate the page itself.
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
+  const isAdmin = me.role === 'admin';
 
-  const { data: meProfile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
+  const [usersData, cats, locs, taskCount, subtaskCount, receiptCount] =
+    await Promise.all([
+      prisma.userProfile.findMany({
+        select: { id: true, fullName: true, email: true, role: true, active: true, lastLogin: true },
+        orderBy: [{ role: 'asc' }, { fullName: 'asc' }],
+      }),
+      prisma.category.findMany({
+        select: { id: true, name: true, colorHex: true, sortOrder: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.location.findMany({
+        select: { id: true, name: true, building: true, sortOrder: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.task.count(),
+      prisma.subtask.count(),
+      prisma.attachment.count({ where: { type: 'receipt' } }),
+    ]);
 
-  const isAdmin = meProfile?.role === 'admin';
-
-  const [
-    { data: usersData, error: usersErr },
-    { data: cats, error: catsErr },
-    { data: locs, error: locsErr },
-    { count: taskCount },
-    { count: subtaskCount },
-    { count: receiptCount },
-  ] = await Promise.all([
-    supabase
-      .from('user_profile')
-      .select('id, full_name, email, role, active, last_login')
-      .order('role')
-      .order('full_name'),
-    supabase.from('category').select('id, name, color_hex, sort_order').order('sort_order'),
-    supabase.from('location').select('id, name, building, sort_order').order('sort_order'),
-    supabase.from('task').select('*', { count: 'exact', head: true }),
-    supabase.from('subtask').select('*', { count: 'exact', head: true }),
-    supabase.from('attachment').select('*', { count: 'exact', head: true }).eq('type', 'receipt'),
-  ]);
-
-  const users = (usersData ?? []) as Profile[];
-  const categories = (cats ?? []) as Category[];
-  const locations = (locs ?? []) as Location[];
+  const users: Profile[] = usersData.map((u) => ({
+    id: u.id,
+    full_name: u.fullName,
+    email: u.email,
+    role: u.role,
+    active: u.active,
+    last_login: u.lastLogin ? u.lastLogin.toISOString() : null,
+  }));
+  const categories: Category[] = cats.map((c) => ({
+    id: c.id,
+    name: c.name,
+    color_hex: c.colorHex,
+    sort_order: c.sortOrder,
+  }));
+  const locations: Location[] = locs.map((l) => ({
+    id: l.id,
+    name: l.name,
+    building: l.building,
+    sort_order: l.sortOrder,
+  }));
 
   const activeUsers = users.filter((u) => u.active).length;
 
@@ -99,10 +108,7 @@ export default async function AdminPage() {
         actionHref={isAdmin ? '/admin/users' : undefined}
         actionLabel="Manage →"
       >
-        {usersErr ? (
-          <ErrorRow message={usersErr.message} />
-        ) : (
-          <table className="w-full border-collapse text-[13px]">
+        <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr>
                 <Th>Name</Th>
@@ -143,17 +149,13 @@ export default async function AdminPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        )}
+        </table>
       </Section>
 
       {/* Categories + Locations side by side */}
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Section title="Categories" subtitle={`${categories.length} total`}>
-          {catsErr ? (
-            <ErrorRow message={catsErr.message} />
-          ) : (
-            <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-2">
               {categories.map((c) => (
                 <li
                   key={c.id}
@@ -171,15 +173,11 @@ export default async function AdminPage() {
                   </span>
                 </li>
               ))}
-            </ul>
-          )}
+          </ul>
         </Section>
 
         <Section title="Locations" subtitle={`${locations.length} total`}>
-          {locsErr ? (
-            <ErrorRow message={locsErr.message} />
-          ) : (
-            <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-2">
               {locations.map((l) => (
                 <li
                   key={l.id}
@@ -191,8 +189,7 @@ export default async function AdminPage() {
                   </span>
                 </li>
               ))}
-            </ul>
-          )}
+          </ul>
         </Section>
       </div>
     </div>
@@ -255,14 +252,6 @@ function Section({
       </header>
       {children}
     </section>
-  );
-}
-
-function ErrorRow({ message }: { message: string }) {
-  return (
-    <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-      Failed to load: {message}
-    </div>
   );
 }
 

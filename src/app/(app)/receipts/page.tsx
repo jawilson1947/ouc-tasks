@@ -1,9 +1,9 @@
 /**
  * Receipts — list of attachments where type='receipt'.
- * Server Component. Upload UI is deferred until Supabase Storage is wired up.
+ * Server Component. Upload UI is deferred until file storage is wired up.
  */
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { fmtUSD, fmtDateLong } from '@/lib/format';
 
 export const metadata = { title: 'Receipts — OUC Infrastructure Tasks' };
@@ -26,33 +26,42 @@ type Task = {
 };
 
 export default async function ReceiptsPage() {
-  const supabase = await createClient();
-
-  const { data: receiptsData, error: receiptsErr } = await supabase
-    .from('attachment')
-    .select('id, task_id, filename, vendor, receipt_amount, receipt_date, caption, uploaded_at')
-    .eq('type', 'receipt')
-    .order('receipt_date', { ascending: false, nullsFirst: false })
-    .order('uploaded_at', { ascending: false });
-
-  if (receiptsErr) {
+  let rows;
+  try {
+    // MySQL sorts NULLs last on DESC, which matches the old Supabase
+    // `nullsFirst: false` ordering — no JS re-sort needed here.
+    rows = await prisma.attachment.findMany({
+      where: { type: 'receipt' },
+      orderBy: [{ receiptDate: 'desc' }, { uploadedAt: 'desc' }],
+      include: { task: { select: { id: true, legacyId: true, title: true } } },
+    });
+  } catch (e) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load receipts:</strong> {receiptsErr.message}
+        <strong>Failed to load receipts:</strong> {(e as Error).message}
       </div>
     );
   }
 
-  const receipts = (receiptsData ?? []) as Receipt[];
-  const taskIds = Array.from(new Set(receipts.map((r) => r.task_id).filter(Boolean))) as string[];
-  let taskMap = new Map<string, Task>();
-  if (taskIds.length > 0) {
-    const { data: tasksData } = await supabase
-      .from('task')
-      .select('id, legacy_id, title')
-      .in('id', taskIds);
-    taskMap = new Map((tasksData ?? []).map((t) => [t.id, t as Task]));
-  }
+  const receipts: Receipt[] = rows.map((r) => ({
+    id: r.id,
+    task_id: r.taskId,
+    filename: r.filename,
+    vendor: r.vendor,
+    receipt_amount: r.receiptAmount != null ? Number(r.receiptAmount) : null,
+    receipt_date: r.receiptDate ? r.receiptDate.toISOString().slice(0, 10) : null,
+    caption: r.caption,
+    uploaded_at: r.uploadedAt.toISOString(),
+  }));
+
+  const taskMap = new Map<string, Task>(
+    rows
+      .filter((r) => r.task != null)
+      .map((r) => [
+        r.task!.id,
+        { id: r.task!.id, legacy_id: r.task!.legacyId, title: r.task!.title },
+      ])
+  );
 
   const total = receipts.reduce(
     (sum, r) => sum + Number(r.receipt_amount ?? 0),
@@ -72,7 +81,7 @@ export default async function ReceiptsPage() {
         <button
           type="button"
           disabled
-          title="Upload — coming soon (needs Supabase Storage wiring)"
+          title="Upload — coming soon (needs file-storage wiring)"
           className="cursor-not-allowed rounded-lg bg-ouc-primary px-3.5 py-2 text-[13.5px] font-semibold text-white opacity-60"
         >
           + Upload Receipt
@@ -85,7 +94,7 @@ export default async function ReceiptsPage() {
           <p className="mx-auto max-w-md text-[13.5px] text-ouc-text-muted">
             Receipts uploaded against any task will collect here so you can track
             actual spend against estimates. Upload UI is the next chunk to land —
-            it needs Supabase Storage and a Server Action for the upload itself.
+            it needs file storage and a Server Action for the upload itself.
           </p>
         </div>
       ) : (

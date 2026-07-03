@@ -7,7 +7,7 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { canApproveTasks, getCurrentRole } from '@/lib/permissions';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { Pagination, buildPageHref } from '@/components/Pagination';
@@ -59,51 +59,72 @@ export default async function ApprovalsPage({
   }
 
   const sp = await searchParams;
-  const supabase = await createClient();
 
   // Current page (1-indexed). Bad input clamps to 1.
   const requestedPage = Math.max(1, Number(sp.page) || 1);
   const from = (requestedPage - 1) * PAGE_SIZE;
-  const to   = from + PAGE_SIZE - 1;
 
-  const [
-    { data: tasksData, error: tasksErr, count: totalCount },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, approved_at, requested_approval_at, subtask_count, subtask_done_count',
-        { count: 'exact' }
-      )
-      .not('requested_approval_at', 'is', null)
-      .neq('status', 'blocked')
-      .neq('status', 'closed')
-      .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .range(from, to),
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name'),
-  ]);
-
-  if (tasksErr) {
+  let allRows, cats, locs;
+  try {
+    [allRows, cats, locs] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        where: {
+          requestedApprovalAt: { not: null },
+          status: { notIn: ['blocked', 'closed'] },
+        },
+      }),
+      prisma.category.findMany({
+        select: { id: true, name: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
+    ]);
+  } catch (e) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load approvals queue:</strong> {tasksErr.message}
+        <strong>Failed to load approvals queue:</strong> {(e as Error).message}
       </div>
     );
   }
 
-  const tasks = (tasksData ?? []) as ApprovalRow[];
-  const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
-  const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
+  // Sort priority desc, then due_date asc with NULLs last (matches the old
+  // Supabase ordering — MySQL sorts NULLs first on ASC), then paginate.
+  // The queue is small, so fetching all rows and slicing in JS keeps the
+  // exact count without a second query.
+  allRows.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    const da = a.dueDate?.getTime() ?? Infinity;
+    const db = b.dueDate?.getTime() ?? Infinity;
+    return da - db;
+  });
+
+  const totalCount = allRows.length;
+  const tasks: ApprovalRow[] = allRows.slice(from, from + PAGE_SIZE).map((t) => ({
+    id: t.id,
+    legacy_id: t.legacyId,
+    title: t.title,
+    priority: t.priority,
+    status: t.status,
+    category_id: t.categoryId,
+    location_id: t.locationId,
+    due_date: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+    total_cost: Number(t.totalCost),
+    approved_at: t.approvedAt ? t.approvedAt.toISOString() : null,
+    requested_approval_at: t.requestedApprovalAt
+      ? t.requestedApprovalAt.toISOString()
+      : null,
+    subtask_count: Number(t.subtaskCount),
+    subtask_done_count: Number(t.subtaskDoneCount),
+  }));
+
+  const catName = new Map<number, string>(cats.map((c) => [c.id, c.name]));
+  const locName = new Map<number, string>(locs.map((l) => [l.id, l.name]));
 
   // Pagination derived values. The awaiting/approved breakdown that lived
   // here previously was page-scoped (only counted rows in the current slice)
   // and so was dropped — it'd be misleading. An accurate split would require
   // a separate count query; not worth the round-trip for the header text.
-  const total       = totalCount ?? tasks.length;
+  const total       = totalCount;
   const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(requestedPage, totalPages);
   const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;

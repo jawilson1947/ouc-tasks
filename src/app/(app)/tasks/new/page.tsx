@@ -4,7 +4,8 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
 import { TaskForm } from '@/components/TaskForm';
 import { createTask } from '../actions';
 
@@ -16,35 +17,46 @@ export default async function NewTaskPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error } = await searchParams;
-  const supabase = await createClient();
 
   // Authorization: redirect viewers / unauth back to the list.
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (!['admin', 'editor', 'approver'].includes(profile?.role ?? '')) {
+  if (!['admin', 'editor', 'approver'].includes(user.role)) {
     redirect('/tasks?error=Admin%2C+editor%2C+or+approver+role+required');
   }
 
-  const [
-    { data: categories },
-    { data: locations },
-    { data: contractors },
-    { data: users },
-  ] = await Promise.all([
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name').order('sort_order'),
-    supabase.from('contractor').select('id, business_name, active').order('business_name'),
-    supabase
-      .from('user_profile')
-      .select('id, full_name, role, active')
-      .in('role', ['admin', 'editor', 'approver'])
-      .order('full_name'),
+  const [categories, locations, contractorRows, userRows] = await Promise.all([
+    prisma.category.findMany({
+      select: { id: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.location.findMany({
+      select: { id: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.contractor.findMany({
+      select: { id: true, businessName: true, active: true },
+      orderBy: { businessName: 'asc' },
+    }),
+    prisma.userProfile.findMany({
+      where: { role: { in: ['admin', 'editor', 'approver'] } },
+      select: { id: true, fullName: true, role: true, active: true },
+      orderBy: { fullName: 'asc' },
+    }),
   ]);
+
+  // TaskForm expects the old snake_case column names.
+  const contractors = contractorRows.map((c) => ({
+    id: c.id,
+    business_name: c.businessName,
+    active: c.active,
+  }));
+  const users = userRows.map((u) => ({
+    id: u.id,
+    full_name: u.fullName,
+    role: u.role,
+    active: u.active,
+  }));
 
   return (
     <div>
@@ -63,10 +75,10 @@ export default async function NewTaskPage({
 
       <TaskForm
         action={createTask}
-        categories={categories ?? []}
-        locations={locations ?? []}
-        contractors={contractors ?? []}
-        users={users ?? []}
+        categories={categories}
+        locations={locations}
+        contractors={contractors}
+        users={users}
         submitLabel="Create task"
       />
     </div>

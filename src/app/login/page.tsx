@@ -2,35 +2,27 @@
  * Login page — public, rendered when the proxy redirects unauthenticated
  * users here. Visual spec: docs/mockups/login.html.
  *
- * Server Component. The form posts to the `signIn` Server Action, which
- * either redirects to `next` on success or back here with `?error=`.
+ * Server Component shell; the interactive form lives in LoginForm.tsx
+ * (client component) which signs in via NextAuth credentials.
  */
 import Image from 'next/image';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
-import { signIn } from './actions';
+import { auth } from '@/lib/auth';
+import LoginForm from './LoginForm';
 
 export const metadata = { title: 'Sign in — OUC Infrastructure Tasks' };
-
-const ERROR_MESSAGES: Record<string, string> = {
-  missing: 'Please enter both email and password.',
-  invalid: 'Invalid email or password. Please try again.',
-};
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ next?: string; error?: string; reset?: string }>;
 }) {
-  const { next = '/dashboard', error, reset } = await searchParams;
+  const { next = '/dashboard', reset } = await searchParams;
 
   // If the user is already signed in, skip straight to their destination.
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) redirect(next);
+  const session = await auth();
+  if (session?.user?.id) redirect(next);
 
-  const errorMessage = error ? ERROR_MESSAGES[error] ?? 'Sign-in failed.' : null;
   const resetSuccess = reset === '1';
 
   return (
@@ -73,69 +65,7 @@ export default async function LoginPage({
             </div>
           )}
 
-          {errorMessage && (
-            <div
-              role="alert"
-              className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700"
-            >
-              {errorMessage}
-            </div>
-          )}
-
-          <form action={signIn} className="flex flex-col gap-3.5">
-            <input type="hidden" name="next" value={next} />
-
-            <div>
-              <label htmlFor="email" className="mb-1.5 block text-[12.5px] font-semibold text-ouc-text">
-                Email
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="you@oucsda.org"
-                autoComplete="email"
-                required
-                className="w-full rounded-lg border border-ouc-border bg-white px-3 py-2.5 text-sm text-ouc-text transition-colors focus:border-ouc-accent focus:outline-none focus:ring-3 focus:ring-ouc-accent/20"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="mb-1.5 block text-[12.5px] font-semibold text-ouc-text">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-                className="w-full rounded-lg border border-ouc-border bg-white px-3 py-2.5 text-sm text-ouc-text transition-colors focus:border-ouc-accent focus:outline-none focus:ring-3 focus:ring-ouc-accent/20"
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[12.5px]">
-              <label className="inline-flex cursor-pointer items-center gap-1.5 text-ouc-text-muted">
-                <input
-                  type="checkbox"
-                  name="remember"
-                  className="accent-ouc-primary"
-                />
-                Keep me signed in
-              </label>
-              <Link href="/auth/forgot" className="text-ouc-accent hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-
-            <button
-              type="submit"
-              className="mt-1 w-full cursor-pointer rounded-lg bg-ouc-primary px-3.5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ouc-primary-hover"
-            >
-              Sign in
-            </button>
-          </form>
+          <LoginForm next={next} />
 
           <div className="mt-6 text-center text-xs text-ouc-text-muted">
             Don&apos;t have an account? Contact your administrator to be invited.

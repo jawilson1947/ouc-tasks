@@ -2,38 +2,62 @@
 
 /**
  * Subtask Server Actions — create, update, delete, and status-cycle.
+ *
+ * Authorization: admin and editor can write (matching the pre-migration app
+ * behavior). Supabase RLS is gone (MySQL), so the ownership rule the old
+ * subtask_editor_write policy enforced — editors may only touch sub-tasks of
+ * tasks they created — is checked explicitly here.
+ *
+ * Note: the parent task auto-complete behavior (all sub-tasks done ⇒ task
+ * marked done) lives in DB triggers (see mysql_schema.sql), exactly as it
+ * did with the Postgres maybe_complete_task trigger — no app logic needed.
  */
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import type { SubtaskStatus } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { requireRole, type SessionUser } from '@/lib/auth';
 
 const VALID_STATUSES = new Set(['not_started', 'in_progress', 'done']);
 
-async function requireWriter() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated.');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  const role = profile?.role ?? '';
-  if (!['admin', 'editor'].includes(role)) {
+/** requireRole(), but with the friendly error messages the redirects show. */
+async function requireWriter(): Promise<SessionUser> {
+  try {
+    return await requireRole('admin', 'editor');
+  } catch (e) {
+    if ((e as Error).message === 'Not authenticated') {
+      throw new Error('Not authenticated.');
+    }
     throw new Error('You need admin or editor role to manage sub-tasks.');
   }
-  return { supabase, userId: user.id };
+}
+
+/**
+ * Ownership rule formerly enforced by RLS (subtask_editor_write): editors may
+ * only manage sub-tasks of tasks they created. Returns an error message, or
+ * null when the write is allowed.
+ */
+async function editorOwnershipError(
+  user: SessionUser,
+  taskId: string,
+): Promise<string | null> {
+  if (user.role !== 'editor') return null;
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { createdById: true },
+  });
+  if (!task || task.createdById !== user.id) {
+    return 'Editors can only manage sub-tasks on tasks they created.';
+  }
+  return null;
 }
 
 /** Bump task.updated_at so the detail page reflects the latest subtask change. */
-async function touchTaskUpdatedAt(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  taskId: string,
-) {
-  await supabase
-    .from('task')
-    .update({ updated_at: new Date().toISOString() })
-    .eq('id', taskId);
+async function touchTaskUpdatedAt(taskId: string) {
+  await prisma.task.update({
+    where: { id: taskId },
+    data: { updatedAt: new Date() },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -50,35 +74,45 @@ export async function createSubtask(formData: FormData) {
     redirect(`/tasks/${legacyId}/edit?error=Description+is+required`);
   }
 
-  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let user: SessionUser;
   try {
-    ({ supabase } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent((e as Error).message)}`);
   }
 
-  const { data: maxRow } = await supabase
-    .from('subtask')
-    .select('sequence')
-    .eq('task_id', taskId)
-    .order('sequence', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const sequence = (maxRow?.sequence ?? 0) + 1;
-
-  const { error } = await supabase.from('subtask').insert({
-    task_id: taskId,
-    sequence,
-    description: desc,
-    labor_cost: labor,
-    equipment_cost: equip,
-  });
-
-  if (error) {
-    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(error.message)}`);
+  const denied = await editorOwnershipError(user, taskId);
+  if (denied) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(denied)}`);
   }
 
-  await touchTaskUpdatedAt(supabase, taskId);
+  const maxRow = await prisma.subtask.findFirst({
+    where: { taskId },
+    orderBy: { sequence: 'desc' },
+    select: { sequence: true },
+  });
+  const sequence = (maxRow?.sequence ?? 0) + 1;
+
+  let insertErr: string | null = null;
+  try {
+    await prisma.subtask.create({
+      data: {
+        taskId,
+        sequence,
+        description: desc,
+        laborCost: labor,
+        equipmentCost: equip,
+      },
+    });
+  } catch (e) {
+    insertErr = e instanceof Error ? e.message : 'Insert failed';
+  }
+
+  if (insertErr) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(insertErr)}`);
+  }
+
+  await touchTaskUpdatedAt(taskId);
 
   revalidatePath(`/tasks/${legacyId}`);
   revalidatePath(`/tasks/${legacyId}/edit`);
@@ -101,26 +135,40 @@ export async function updateSubtask(formData: FormData) {
     redirect(`/tasks/${legacyId}/edit?error=Description+is+required`);
   }
 
-  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let user: SessionUser;
   try {
-    ({ supabase } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent((e as Error).message)}`);
   }
 
-  const { error } = await supabase
-    .from('subtask')
-    .update({ description: desc, labor_cost: labor, equipment_cost: equip })
-    .eq('id', subtaskId);
+  // Look up the parent task for the ownership check + updated_at touch.
+  const sub = await prisma.subtask.findUnique({
+    where: { id: subtaskId },
+    select: { taskId: true },
+  });
+  if (!sub) redirect(`/tasks/${legacyId}/edit?error=Sub-task+not+found`);
 
-  if (error) {
-    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(error.message)}`);
+  const denied = await editorOwnershipError(user, sub.taskId);
+  if (denied) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(denied)}`);
   }
 
-  // Look up parent task and touch its updated_at
-  const { data: sub } = await supabase
-    .from('subtask').select('task_id').eq('id', subtaskId).maybeSingle();
-  if (sub?.task_id) await touchTaskUpdatedAt(supabase, sub.task_id);
+  let updateErr: string | null = null;
+  try {
+    await prisma.subtask.update({
+      where: { id: subtaskId },
+      data: { description: desc, laborCost: labor, equipmentCost: equip },
+    });
+  } catch (e) {
+    updateErr = e instanceof Error ? e.message : 'Update failed';
+  }
+
+  if (updateErr) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(updateErr)}`);
+  }
+
+  await touchTaskUpdatedAt(sub.taskId);
 
   revalidatePath(`/tasks/${legacyId}`);
   revalidatePath(`/tasks/${legacyId}/edit`);
@@ -138,24 +186,37 @@ export async function deleteSubtask(formData: FormData) {
 
   if (!subtaskId) redirect(`/tasks/${legacyId}/edit?error=Missing+subtask+id`);
 
-  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let user: SessionUser;
   try {
-    ({ supabase } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent((e as Error).message)}`);
   }
 
-  // Fetch parent task_id before deleting (row won't exist after)
-  const { data: sub } = await supabase
-    .from('subtask').select('task_id').eq('id', subtaskId).maybeSingle();
+  // Fetch parent task_id before deleting (row won't exist after).
+  const sub = await prisma.subtask.findUnique({
+    where: { id: subtaskId },
+    select: { taskId: true },
+  });
+  if (!sub) redirect(`/tasks/${legacyId}/edit?error=Sub-task+not+found`);
 
-  const { error } = await supabase.from('subtask').delete().eq('id', subtaskId);
-
-  if (error) {
-    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(error.message)}`);
+  const denied = await editorOwnershipError(user, sub.taskId);
+  if (denied) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(denied)}`);
   }
 
-  if (sub?.task_id) await touchTaskUpdatedAt(supabase, sub.task_id);
+  let deleteErr: string | null = null;
+  try {
+    await prisma.subtask.delete({ where: { id: subtaskId } });
+  } catch (e) {
+    deleteErr = e instanceof Error ? e.message : 'Delete failed';
+  }
+
+  if (deleteErr) {
+    redirect(`/tasks/${legacyId}/edit?error=${encodeURIComponent(deleteErr)}`);
+  }
+
+  await touchTaskUpdatedAt(sub.taskId);
 
   revalidatePath(`/tasks/${legacyId}`);
   revalidatePath(`/tasks/${legacyId}/edit`);
@@ -176,33 +237,48 @@ export async function updateSubtaskStatus(formData: FormData) {
     redirect(`/tasks/${legacyId}?error=Invalid+subtask+update`);
   }
 
-  let supabase: Awaited<ReturnType<typeof createClient>>;
-  let userId: string;
+  let user: SessionUser;
   try {
-    ({ supabase, userId } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks/${legacyId}?error=${encodeURIComponent((e as Error).message)}`);
   }
 
-  const payload: Record<string, unknown> = { status: newStatus };
-  if (newStatus === 'done') {
-    payload.completed_at = new Date().toISOString();
-    payload.completed_by = userId;
-  } else {
-    payload.completed_at = null;
-    payload.completed_by = null;
+  const sub = await prisma.subtask.findUnique({
+    where: { id: subtaskId },
+    select: { taskId: true },
+  });
+  if (!sub) redirect(`/tasks/${legacyId}?error=Sub-task+not+found`);
+
+  const denied = await editorOwnershipError(user, sub.taskId);
+  if (denied) {
+    redirect(`/tasks/${legacyId}?error=${encodeURIComponent(denied)}`);
   }
 
-  const { error } = await supabase.from('subtask').update(payload).eq('id', subtaskId);
+  const done = newStatus === 'done';
 
-  if (error) {
-    redirect(`/tasks/${legacyId}?error=${encodeURIComponent(error.message)}`);
+  let updateErr: string | null = null;
+  try {
+    // Completing the last sub-task auto-completes the parent task via the DB
+    // trigger (same behavior as the old Postgres maybe_complete_task trigger).
+    await prisma.subtask.update({
+      where: { id: subtaskId },
+      data: {
+        status: newStatus as SubtaskStatus,
+        completedAt: done ? new Date() : null,
+        completedById: done ? user.id : null,
+      },
+    });
+  } catch (e) {
+    updateErr = e instanceof Error ? e.message : 'Update failed';
+  }
+
+  if (updateErr) {
+    redirect(`/tasks/${legacyId}?error=${encodeURIComponent(updateErr)}`);
   }
 
   // Touch parent task's updated_at
-  const { data: sub } = await supabase
-    .from('subtask').select('task_id').eq('id', subtaskId).maybeSingle();
-  if (sub?.task_id) await touchTaskUpdatedAt(supabase, sub.task_id);
+  await touchTaskUpdatedAt(sub.taskId);
 
   revalidatePath(`/tasks/${legacyId}`);
   revalidatePath('/tasks');

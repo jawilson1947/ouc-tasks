@@ -1,7 +1,7 @@
 -- ============================================================================
 -- OUC Infrastructure Tasks — Complete MySQL Schema + Seed Data
 -- ============================================================================
--- Converted from Supabase/PostgreSQL (migrations 0001–0005)
+-- Converted from Supabase/PostgreSQL (migrations 0001–0009)
 -- Requires: MySQL 8.0.13+ (for DEFAULT (UUID()) expression support)
 --
 -- KEY DIFFERENCES FROM THE SUPABASE VERSION:
@@ -26,6 +26,17 @@
 -- 5. TRIGGERS: The updated_at column uses ON UPDATE CURRENT_TIMESTAMP
 --    natively in MySQL, so no separate trigger is needed for that.
 --    The maybe_complete_task trigger is ported to MySQL syntax.
+--
+-- 6. TIMEZONE (migration 0007): Postgres role-level `SET timezone` has no
+--    direct MySQL equivalent. If you want Central time for NOW()::text-style
+--    output, set `default-time-zone = 'America/Chicago'` in my.cnf, or run
+--    `SET GLOBAL time_zone = 'America/Chicago';`. The app's display layer
+--    (src/lib/format.ts + NEXT_PUBLIC_APP_TIMEZONE) is the source of truth
+--    for user-visible times either way.
+--
+-- 7. PARTIAL INDEXES (migration 0006): Postgres's
+--    `CREATE INDEX ... WHERE approved_at IS NOT NULL` becomes a plain
+--    index on approved_at — MySQL has no partial indexes.
 --
 -- HOW TO RUN:
 --   mysql -u YOUR_USER -p YOUR_DATABASE < mysql_schema.sql
@@ -73,16 +84,21 @@ CREATE TABLE IF NOT EXISTS location (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS user_profile (
-    id                  VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id                  VARCHAR(36)     NOT NULL,
 
     -- Authentication fields (were managed by Supabase Auth)
     email               VARCHAR(255)    NOT NULL,
-    password_hash       VARCHAR(255)    NULL,       -- BCrypt/Argon2 hash; NULL for magic-link-only accounts
+    password_hash       VARCHAR(255)    NULL,       -- BCrypt/Argon2 hash; NULL until user sets a password
     email_verified      TINYINT(1)      NOT NULL DEFAULT 0,
+    -- Password-reset flow (replaces Supabase's reset emails):
+    -- sha256 hex of a one-time token emailed to the user, plus its expiry.
+    reset_token_hash    VARCHAR(64)     NULL,
+    reset_token_expires DATETIME        NULL,
 
     -- Profile fields
     full_name           VARCHAR(255)    NOT NULL,
-    role                ENUM('admin','editor','viewer') NOT NULL DEFAULT 'viewer',
+    -- 'approver' added by migration 0006 (task-approval workflow)
+    role                ENUM('admin','editor','viewer','approver') NOT NULL DEFAULT 'viewer',
     phone               VARCHAR(50)     NULL,
     active              TINYINT(1)      NOT NULL DEFAULT 1,
     last_login          DATETIME        NULL,
@@ -110,7 +126,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS contractor (
-    id                    VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id                    VARCHAR(36)     NOT NULL,
     business_name         VARCHAR(255)    NOT NULL,
     primary_first_name    VARCHAR(100)    NULL,
     primary_last_name     VARCHAR(100)    NULL,
@@ -140,12 +156,13 @@ CREATE TABLE IF NOT EXISTS contractor (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS task (
-    id                  VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id                  VARCHAR(36)     NOT NULL,
     legacy_id           INT             NULL,           -- human-readable task number
     title               VARCHAR(500)    NOT NULL,
     description         TEXT            NULL,
     priority            INT             NOT NULL,
-    status              ENUM('not_started','in_progress','blocked','done')
+    -- 'closed' added by migration 0009 (terminal/archived status)
+    status              ENUM('not_started','in_progress','blocked','done','closed')
                                         NOT NULL DEFAULT 'not_started',
     category_id         INT             NULL,
     location_id         INT             NULL,
@@ -159,6 +176,16 @@ CREATE TABLE IF NOT EXISTS task (
     updated_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     completed_at        DATETIME        NULL,
 
+    -- Approval workflow (migrations 0006 + 0008)
+    -- approved_at NULL means "awaiting approval"; approval = permission to
+    -- begin work, never auto-changes status. Revocable only while status =
+    -- 'not_started' (enforced in the app layer, not the DB).
+    approved_at             DATETIME    NULL,
+    approved_by             VARCHAR(36) NULL,
+    -- Set when at least one approval-request email was accepted by SendGrid;
+    -- re-requests overwrite. Never cleared by approval (historical record).
+    requested_approval_at   DATETIME    NULL,
+
     PRIMARY KEY (id),
     UNIQUE KEY task_legacy_id_uq (legacy_id),
     KEY        task_status_idx       (status),
@@ -167,8 +194,8 @@ CREATE TABLE IF NOT EXISTS task (
     KEY        task_category_idx     (category_id),
     KEY        task_location_idx     (location_id),
     KEY        task_contractor_idx   (contractor_id),
+    KEY        task_approved_at_idx  (approved_at),
 
-    CONSTRAINT chk_task_priority
         CHECK (priority BETWEEN 1 AND 5),
     CONSTRAINT fk_task_category
         FOREIGN KEY (category_id)   REFERENCES category    (id) ON DELETE SET NULL,
@@ -179,7 +206,9 @@ CREATE TABLE IF NOT EXISTS task (
     CONSTRAINT fk_task_contractor
         FOREIGN KEY (contractor_id) REFERENCES contractor   (id) ON DELETE SET NULL,
     CONSTRAINT fk_task_created_by
-        FOREIGN KEY (created_by)    REFERENCES user_profile (id) ON DELETE SET NULL
+        FOREIGN KEY (created_by)    REFERENCES user_profile (id) ON DELETE SET NULL,
+    CONSTRAINT fk_task_approved_by
+        FOREIGN KEY (approved_by)   REFERENCES user_profile (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
@@ -187,7 +216,7 @@ CREATE TABLE IF NOT EXISTS task (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS subtask (
-    id                  VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id                  VARCHAR(36)     NOT NULL,
     task_id             VARCHAR(36)     NOT NULL,
     sequence            INT             NOT NULL,
     description         TEXT            NOT NULL,
@@ -230,14 +259,15 @@ GROUP BY
     t.id, t.legacy_id, t.title, t.description, t.priority, t.status,
     t.category_id, t.location_id, t.assignee_id, t.contractor_id,
     t.due_date, t.needs_by_date, t.notes, t.created_by,
-    t.created_at, t.updated_at, t.completed_at;
+    t.created_at, t.updated_at, t.completed_at,
+    t.approved_at, t.approved_by, t.requested_approval_at;
 
 -- ============================================================================
 -- Section 7: Attachments
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS attachment (
-    id              VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id              VARCHAR(36)     NOT NULL,
     task_id         VARCHAR(36)     NULL,
     subtask_id      VARCHAR(36)     NULL,
     type            ENUM('photo','receipt','spec','document','other')
@@ -259,10 +289,8 @@ CREATE TABLE IF NOT EXISTS attachment (
     KEY attachment_type_idx    (type),
 
     -- At least one of task_id / subtask_id must be set
-    CONSTRAINT chk_attachment_has_parent
         CHECK (task_id IS NOT NULL OR subtask_id IS NOT NULL),
     -- receipt_amount required when type = 'receipt'
-    CONSTRAINT chk_attachment_receipt
         CHECK (type != 'receipt' OR receipt_amount IS NOT NULL),
 
     CONSTRAINT fk_attachment_task
@@ -278,7 +306,7 @@ CREATE TABLE IF NOT EXISTS attachment (
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS comment (
-    id          VARCHAR(36)     NOT NULL DEFAULT (UUID()),
+    id          VARCHAR(36)     NOT NULL,
     task_id     VARCHAR(36)     NOT NULL,
     author_id   VARCHAR(36)     NOT NULL,
     body        TEXT            NOT NULL,
@@ -325,6 +353,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
 -- The trigger below ports the PostgreSQL maybe_complete_task() function:
 -- when ALL subtasks of a task reach 'done', the parent task is auto-completed.
 -- ============================================================================
+
+DROP TRIGGER IF EXISTS trg_subtask_maybe_complete_update;
+DROP TRIGGER IF EXISTS trg_subtask_maybe_complete_insert;
 
 DELIMITER $$
 
@@ -416,9 +447,27 @@ ON DUPLICATE KEY UPDATE
     sort_order = VALUES(sort_order);
 
 -- ============================================================================
+-- Section 12: Backfill (migration 0006) — run AFTER importing data.
+-- Every Done task is retroactively marked approved; approved_by is the
+-- oldest active admin. No-op on an empty database.
+-- ============================================================================
+
+UPDATE task t
+  JOIN (SELECT id FROM user_profile
+         WHERE role = 'admin' AND active = 1
+         ORDER BY created_at ASC LIMIT 1) sys
+SET t.approved_at = COALESCE(t.completed_at, NOW()),
+    t.approved_by = sys.id
+WHERE t.status = 'done'
+  AND t.approved_at IS NULL;
+
+-- ============================================================================
 -- Verify with:
 --   SELECT COUNT(*) FROM category;           -- should be 6
 --   SELECT COUNT(*) FROM location;           -- should be 17
---   DESCRIBE task;                           -- should include contractor_id
+--   DESCRIBE task;                           -- should include contractor_id,
+--                                            --   approved_at, approved_by,
+--                                            --   requested_approval_at
 --   SELECT * FROM task_with_totals LIMIT 1;  -- should work (empty result ok)
+--   SELECT COUNT(*) FROM task WHERE status='done' AND approved_at IS NULL; -- 0
 -- ============================================================================

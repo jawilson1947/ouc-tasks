@@ -12,9 +12,10 @@
  *     fails entirely, or if there were zero approvers to send to, the column
  *     is left untouched. Approval (later) does NOT clear the column.
  *   - Permission gate matches the edit page: signed-in admin/editor/approver,
- *     and editors must own the task. We re-check here as defense in depth.
+ *     and editors must own the task. MySQL has no RLS, so this check is the
+ *     only gate — requireRole() runs before anything else.
  *   - Recipient query: user_profile rows where role in ('admin','approver'),
- *     active = true, email is not null.
+ *     active = true, email non-empty.
  *   - Empty recipient list → redirect with ?noApprovers=1 (no send attempt).
  *   - One email per recipient (no BCC), matching sendApprovalEmail.ts.
  *   - Any SendGrid failure → redirect with the extra &emailFailed=1 flag,
@@ -26,11 +27,10 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { requireRole, type SessionUser } from '@/lib/auth';
 import { fmtUSD } from '@/lib/format';
 import { sendApprovalRequestEmail } from '@/lib/email/sendApprovalRequestEmail';
-
-const ROLES_THAT_CAN_REQUEST = new Set(['admin', 'editor', 'approver']);
 
 export async function requestApproval(formData: FormData) {
   const id = String(formData.get('id') ?? '').trim();
@@ -40,22 +40,15 @@ export async function requestApproval(formData: FormData) {
   }
 
   const editPath = `/tasks/${legacyIdRaw}/edit`;
-  const supabase = await createClient();
 
   // ── Auth + role check (mirrors the edit page) ────────────────────────────
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    redirect('/login');
-  }
-  const { data: requesterProfile } = await supabase
-    .from('user_profile')
-    .select('role, full_name, email')
-    .eq('id', user.id)
-    .maybeSingle();
-  const requesterRole = requesterProfile?.role ?? '';
-  if (!ROLES_THAT_CAN_REQUEST.has(requesterRole)) {
+  let user: SessionUser;
+  try {
+    user = await requireRole('admin', 'editor', 'approver');
+  } catch (e) {
+    if ((e as Error).message === 'Not authenticated') {
+      redirect('/login');
+    }
     redirect(
       `/tasks/${legacyIdRaw}?error=${encodeURIComponent(
         'Admin, editor, or approver role required',
@@ -64,20 +57,29 @@ export async function requestApproval(formData: FormData) {
   }
 
   // ── Load task (with totals) ─────────────────────────────────────────────
-  const { data: task, error: taskErr } = await supabase
-    .from('task_with_totals')
-    .select('id, legacy_id, title, assignee_id, total_cost, created_by')
-    .eq('id', id)
-    .maybeSingle();
+  let task;
+  try {
+    task = await prisma.taskWithTotals.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        legacyId: true,
+        title: true,
+        assigneeId: true,
+        totalCost: true,
+        createdById: true,
+      },
+    });
+  } catch (e) {
+    redirect(`${editPath}?error=${encodeURIComponent((e as Error).message)}`);
+  }
 
-  if (taskErr || !task) {
-    redirect(
-      `${editPath}?error=${encodeURIComponent(taskErr?.message ?? 'Task not found')}`,
-    );
+  if (!task) {
+    redirect(`${editPath}?error=${encodeURIComponent('Task not found')}`);
   }
 
   // Editors can only act on tasks they created — same as edit page.
-  if (requesterRole === 'editor' && task.created_by !== user.id) {
+  if (user.role === 'editor' && task.createdById !== user.id) {
     redirect(
       `/tasks/${legacyIdRaw}?error=${encodeURIComponent(
         'Editors can only edit tasks they created',
@@ -86,19 +88,17 @@ export async function requestApproval(formData: FormData) {
   }
 
   // ── Approver / admin recipients ──────────────────────────────────────────
-  const { data: recipientRows } = await supabase
-    .from('user_profile')
-    .select('id, full_name, email')
-    .in('role', ['admin', 'approver'])
-    .eq('active', true)
-    .not('email', 'is', null);
+  const recipientRows = await prisma.userProfile.findMany({
+    where: {
+      role: { in: ['admin', 'approver'] },
+      active: true,
+    },
+    select: { id: true, fullName: true, email: true },
+  });
 
-  const recipients = (recipientRows ?? [])
-    .filter(
-      (r): r is { id: string; full_name: string | null; email: string } =>
-        typeof r.email === 'string' && r.email.length > 0,
-    )
-    .map((r) => ({ email: r.email, fullName: r.full_name }));
+  const recipients = recipientRows
+    .filter((r) => typeof r.email === 'string' && r.email.length > 0)
+    .map((r) => ({ email: r.email, fullName: r.fullName }));
 
   if (recipients.length === 0) {
     // Zero approvers — don't attempt to send. Surface a distinct banner copy
@@ -110,34 +110,26 @@ export async function requestApproval(formData: FormData) {
   // ── Assignee snapshot for the email body ─────────────────────────────────
   let assigneeFullName: string | null = null;
   let assigneeEmail: string | null = null;
-  if (task.assignee_id) {
-    const { data: assignee } = await supabase
-      .from('user_profile')
-      .select('full_name, email')
-      .eq('id', task.assignee_id)
-      .maybeSingle();
-    assigneeFullName = assignee?.full_name ?? null;
+  if (task.assigneeId) {
+    const assignee = await prisma.userProfile.findUnique({
+      where: { id: task.assigneeId },
+      select: { fullName: true, email: true },
+    });
+    assigneeFullName = assignee?.fullName ?? null;
     assigneeEmail = assignee?.email ?? null;
   }
 
   // ── Requester attribution ────────────────────────────────────────────────
-  const requesterName =
-    requesterProfile?.full_name ??
-    requesterProfile?.email ??
-    user.email ??
-    'A user';
+  const requesterName = user.name || user.email || 'A user';
 
   // ── Send ────────────────────────────────────────────────────────────────
-  const totalCost =
-    typeof task.total_cost === 'number'
-      ? task.total_cost
-      : Number(task.total_cost ?? 0);
+  const totalCost = Number(task.totalCost ?? 0);
   const plannedBudget = fmtUSD(Number.isFinite(totalCost) ? totalCost : 0);
 
   const sendResult = await sendApprovalRequestEmail({
     recipients,
     taskTitle: task.title,
-    taskLegacyId: task.legacy_id,
+    taskLegacyId: task.legacyId,
     requesterName,
     assigneeFullName,
     assigneeEmail,
@@ -152,11 +144,12 @@ export async function requestApproval(formData: FormData) {
   if (sendResult.okCount > 0) {
     const legacyIdNum = Number(legacyIdRaw);
     if (Number.isInteger(legacyIdNum)) {
-      const { error: stampErr } = await supabase
-        .from('task')
-        .update({ requested_approval_at: new Date().toISOString() })
-        .eq('legacy_id', legacyIdNum);
-      if (stampErr) {
+      try {
+        await prisma.task.update({
+          where: { legacyId: legacyIdNum },
+          data: { requestedApprovalAt: new Date() },
+        });
+      } catch (stampErr) {
         // Best-effort: the email already went out, so we don't fail the whole
         // action. Log and continue so the banner still surfaces.
         console.error(

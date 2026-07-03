@@ -3,7 +3,8 @@
  */
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
 import { TaskForm } from '@/components/TaskForm';
 import { SubtaskEditor } from '@/components/SubtaskEditor';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
@@ -37,68 +38,112 @@ export default async function EditTaskPage({
   const n = Number(legacyId);
   if (!Number.isInteger(n) || n < 1) notFound();
 
-  const supabase = await createClient();
-
   // Auth check.
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (!['admin', 'editor', 'approver'].includes(profile?.role ?? '')) {
+  if (!['admin', 'editor', 'approver'].includes(user.role)) {
     redirect(`/tasks/${legacyId}?error=Admin%2C+editor%2C+or+approver+role+required`);
   }
 
-  const { data: task, error } = await supabase
-    .from('task')
-    .select('id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by, requested_approval_at')
-    .eq('legacy_id', n)
-    .maybeSingle();
-
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        Failed to load task: {error.message}
-      </div>
-    );
-  }
+  const task = await prisma.task.findUnique({ where: { legacyId: n } });
   if (!task) notFound();
 
   // Editor can only edit own tasks. Admin can edit any.
-  if (profile?.role === 'editor' && task.created_by !== user.id) {
+  if (user.role === 'editor' && task.createdById !== user.id) {
     redirect(`/tasks/${legacyId}?error=Editors+can+only+edit+tasks+they+created`);
   }
 
-  const [
-    { data: categories },
-    { data: locations },
-    { data: contractors },
-    { data: users },
-    { data: subtasks },
-    { data: photos },
-  ] = await Promise.all([
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name').order('sort_order'),
-    supabase.from('contractor').select('id, business_name, active').order('business_name'),
-    supabase
-      .from('user_profile')
-      .select('id, full_name, role, active')
-      .in('role', ['admin', 'editor', 'approver'])
-      .order('full_name'),
-    supabase
-      .from('subtask')
-      .select('id, sequence, description, labor_cost, equipment_cost, status')
-      .eq('task_id', task.id)
-      .order('sequence'),
-    supabase
-      .from('attachment')
-      .select('id, filename, caption, storage_path, content_type, uploaded_at')
-      .eq('task_id', task.id)
-      .in('type', ['photo', 'document'])
-      .order('uploaded_at', { ascending: false }),
-  ]);
+  const [categories, locations, contractorRows, userRows, subtaskRows, photoRows] =
+    await Promise.all([
+      prisma.category.findMany({
+        select: { id: true, name: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.location.findMany({
+        select: { id: true, name: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.contractor.findMany({
+        select: { id: true, businessName: true, active: true },
+        orderBy: { businessName: 'asc' },
+      }),
+      prisma.userProfile.findMany({
+        where: { role: { in: ['admin', 'editor', 'approver'] } },
+        select: { id: true, fullName: true, role: true, active: true },
+        orderBy: { fullName: 'asc' },
+      }),
+      prisma.subtask.findMany({
+        where: { taskId: task.id },
+        orderBy: { sequence: 'asc' },
+        select: {
+          id: true,
+          sequence: true,
+          description: true,
+          laborCost: true,
+          equipmentCost: true,
+          status: true,
+        },
+      }),
+      prisma.attachment.findMany({
+        where: { taskId: task.id, type: { in: ['photo', 'document'] } },
+        orderBy: { uploadedAt: 'desc' },
+        select: {
+          id: true,
+          filename: true,
+          caption: true,
+          storagePath: true,
+          contentType: true,
+          uploadedAt: true,
+        },
+      }),
+    ]);
+
+  // Map Prisma results into the snake_case shapes the client components expect.
+  const defaults = {
+    id: task.id,
+    legacy_id: task.legacyId,
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    status: task.status,
+    category_id: task.categoryId,
+    location_id: task.locationId,
+    contractor_id: task.contractorId,
+    assignee_id: task.assigneeId,
+    due_date: task.dueDate ? task.dueDate.toISOString().slice(0, 10) : null,
+    notes: task.notes,
+    requested_approval_at: task.requestedApprovalAt
+      ? task.requestedApprovalAt.toISOString()
+      : null,
+  };
+
+  const contractors = contractorRows.map((c) => ({
+    id: c.id,
+    business_name: c.businessName,
+    active: c.active,
+  }));
+  const users = userRows.map((u) => ({
+    id: u.id,
+    full_name: u.fullName,
+    role: u.role,
+    active: u.active,
+  }));
+  const subtasks = subtaskRows.map((s) => ({
+    id: s.id,
+    sequence: s.sequence,
+    description: s.description,
+    labor_cost: Number(s.laborCost),
+    equipment_cost: Number(s.equipmentCost),
+    status: s.status,
+  }));
+  const photos = photoRows.map((p) => ({
+    id: p.id,
+    filename: p.filename,
+    caption: p.caption,
+    storage_path: p.storagePath,
+    content_type: p.contentType,
+    uploaded_at: p.uploadedAt.toISOString(),
+  }));
 
   return (
     <div>
@@ -114,7 +159,7 @@ export default async function EditTaskPage({
 
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <h1 className="text-2xl font-bold text-ouc-primary">
-          Edit Task #{task.legacy_id}
+          Edit Task #{task.legacyId}
         </h1>
         <TaskDeleteModal
           taskId={task.id}
@@ -146,32 +191,32 @@ export default async function EditTaskPage({
 
       <TaskForm
         action={updateTask}
-        defaults={task}
-        categories={categories ?? []}
-        locations={locations ?? []}
-        contractors={contractors ?? []}
-        users={users ?? []}
+        defaults={defaults}
+        categories={categories}
+        locations={locations}
+        contractors={contractors}
+        users={users}
         submitLabel="Save changes"
         isEdit
         cancelHref={`/tasks/${legacyId}`}
         requestApprovalSlot={
           <RequestApprovalButton
             taskId={task.id}
-            legacyId={task.legacy_id!}
+            legacyId={n}
           />
         }
       />
 
       <SubtaskEditor
-        subtasks={subtasks ?? []}
+        subtasks={subtasks}
         taskId={task.id}
-        legacyId={task.legacy_id!}
+        legacyId={n}
       />
 
       <TaskPhotosCard
-        photos={(photos ?? []) as any}
+        photos={photos}
         taskId={task.id}
-        legacyId={task.legacy_id!}
+        legacyId={n}
       />
     </div>
   );

@@ -8,7 +8,7 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { SubtaskDetailPanel } from '@/components/SubtaskDetailPanel';
 import { TaskReceiptsCard } from '@/components/TaskReceiptsCard';
 import { TaskPhotosCard } from '@/components/TaskPhotosCard';
@@ -91,71 +91,108 @@ export default async function TaskDetailPage({
   const n = Number(legacyId);
   if (!Number.isInteger(n) || n < 1) notFound();
 
-  const supabase = await createClient();
-
-  const [
-    { data: task, error: taskErr },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select(
-        'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, created_at, updated_at, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, approved_at'
-      )
-      .eq('legacy_id', n)
-      .maybeSingle(),
-    supabase.from('category').select('id, name'),
-    supabase.from('location').select('id, name'),
+  const [task, cats, locs] = await Promise.all([
+    prisma.taskWithTotals.findFirst({ where: { legacyId: n } }),
+    prisma.category.findMany({ select: { id: true, name: true } }),
+    prisma.location.findMany({ select: { id: true, name: true } }),
   ]);
 
-  if (taskErr) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load task:</strong> {taskErr.message}
-      </div>
-    );
-  }
   if (!task) notFound();
 
   // Fetch sub-tasks with the resolved task UUID, plus the linked contractor (if any).
-  const [
-    { data: subtasks, error: subErr },
-    { data: contractor },
-    { data: receipts },
-    { data: photos },
-  ] = await Promise.all([
-    supabase
-      .from('subtask')
-      .select('id, sequence, description, labor_cost, equipment_cost, status')
-      .eq('task_id', task.id)
-      .order('sequence'),
-    task.contractor_id
-      ? supabase
-          .from('contractor')
-          .select('id, business_name, primary_first_name, primary_last_name, primary_email, primary_phone, business_phone')
-          .eq('id', task.contractor_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    supabase
-      .from('attachment')
-      .select('id, filename, vendor, receipt_amount, receipt_date, caption, storage_path, content_type, uploaded_at')
-      .eq('task_id', task.id)
-      .eq('type', 'receipt')
-      .order('receipt_date', { ascending: false, nullsFirst: false })
-      .order('uploaded_at', { ascending: false }),
-    supabase
-      .from('attachment')
-      .select('id, filename, caption, storage_path, content_type, uploaded_at')
-      .eq('task_id', task.id)
-      .in('type', ['photo', 'document'])
-      .order('uploaded_at', { ascending: false }),
+  const [subtaskRows, contractor, receiptRows, photoRows] = await Promise.all([
+    prisma.subtask.findMany({
+      where: { taskId: task.id },
+      orderBy: { sequence: 'asc' },
+      select: {
+        id: true,
+        sequence: true,
+        description: true,
+        laborCost: true,
+        equipmentCost: true,
+        status: true,
+      },
+    }),
+    task.contractorId
+      ? prisma.contractor.findUnique({
+          where: { id: task.contractorId },
+          select: {
+            id: true,
+            businessName: true,
+            primaryFirstName: true,
+            primaryLastName: true,
+            primaryEmail: true,
+            primaryPhone: true,
+            businessPhone: true,
+          },
+        })
+      : Promise.resolve(null),
+    prisma.attachment.findMany({
+      where: { taskId: task.id, type: 'receipt' },
+      // MySQL sorts NULLs last on DESC — matches the old `nullsFirst: false`.
+      orderBy: [{ receiptDate: 'desc' }, { uploadedAt: 'desc' }],
+      select: {
+        id: true,
+        filename: true,
+        vendor: true,
+        receiptAmount: true,
+        receiptDate: true,
+        caption: true,
+        storagePath: true,
+        contentType: true,
+        uploadedAt: true,
+      },
+    }),
+    prisma.attachment.findMany({
+      where: { taskId: task.id, type: { in: ['photo', 'document'] } },
+      orderBy: { uploadedAt: 'desc' },
+      select: {
+        id: true,
+        filename: true,
+        caption: true,
+        storagePath: true,
+        contentType: true,
+        uploadedAt: true,
+      },
+    }),
   ]);
 
-  const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
-  const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
-  const category = task.category_id ? catName.get(task.category_id) ?? '—' : '—';
-  const location = task.location_id ? locName.get(task.location_id) ?? '—' : '—';
+  // Map Prisma results into the snake_case shapes the client components expect.
+  const subtasks = subtaskRows.map((s) => ({
+    id: s.id,
+    sequence: s.sequence,
+    description: s.description,
+    labor_cost: Number(s.laborCost),
+    equipment_cost: Number(s.equipmentCost),
+    status: s.status,
+  }));
+
+  const receipts = receiptRows.map((r) => ({
+    id: r.id,
+    filename: r.filename,
+    vendor: r.vendor,
+    receipt_amount: r.receiptAmount != null ? Number(r.receiptAmount) : null,
+    receipt_date: r.receiptDate ? r.receiptDate.toISOString().slice(0, 10) : null,
+    caption: r.caption,
+    storage_path: r.storagePath,
+    content_type: r.contentType,
+    uploaded_at: r.uploadedAt.toISOString(),
+  }));
+
+  const photos = photoRows.map((p) => ({
+    id: p.id,
+    filename: p.filename,
+    caption: p.caption,
+    storage_path: p.storagePath,
+    content_type: p.contentType,
+    uploaded_at: p.uploadedAt.toISOString(),
+  }));
+
+  const catName = new Map<number, string>(cats.map((c) => [c.id, c.name]));
+  const locName = new Map<number, string>(locs.map((l) => [l.id, l.name]));
+  const category = task.categoryId ? catName.get(task.categoryId) ?? '—' : '—';
+  const location = task.locationId ? locName.get(task.locationId) ?? '—' : '—';
+  const dueDateStr = task.dueDate ? task.dueDate.toISOString().slice(0, 10) : null;
 
   return (
     <div>
@@ -164,13 +201,13 @@ export default async function TaskDetailPage({
         <Link href="/tasks" className="hover:text-ouc-primary">All Tasks</Link>
         <span className="mx-1.5 opacity-50">›</span>
         <Link
-          href={`/tasks?category=${task.category_id ?? ''}`}
+          href={`/tasks?category=${task.categoryId ?? ''}`}
           className="hover:text-ouc-primary"
         >
           {category}
         </Link>
         <span className="mx-1.5 opacity-50">›</span>
-        <span>Task #{task.legacy_id}</span>
+        <span>Task #{task.legacyId}</span>
       </div>
 
       {/* Title row */}
@@ -186,9 +223,9 @@ export default async function TaskDetailPage({
         <div className="min-w-0 flex-1">
           <h1 className="flex flex-wrap items-center gap-2 text-[22px] font-bold leading-tight text-ouc-primary">
             <span>{task.title}</span>
-            <ApprovalBadge approved={!!task.approved_at} size="md" />
+            <ApprovalBadge approved={!!task.approvedAt} size="md" />
             <span className="ml-1 text-sm font-medium text-ouc-text-muted">
-              #{task.legacy_id}
+              #{task.legacyId}
             </span>
           </h1>
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -211,12 +248,12 @@ export default async function TaskDetailPage({
             </span>
             <span className="self-center text-[12.5px] text-ouc-text-muted">
               📍 {location}
-              {task.due_date && ` · Due ${fmtDateLong(task.due_date)}`}
+              {dueDateStr && ` · Due ${fmtDateLong(dueDateStr)}`}
             </span>
           </div>
         </div>
         <Link
-          href={`/tasks/${task.legacy_id}/edit`}
+          href={`/tasks/${task.legacyId}/edit`}
           className="rounded-md border border-ouc-border bg-white px-3 py-1.5 text-[12.5px] font-semibold text-ouc-text hover:bg-ouc-surface-alt"
         >
           Edit
@@ -257,32 +294,26 @@ export default async function TaskDetailPage({
 
           {/* Sub-tasks */}
           <Card title="Sub-tasks">
-            {subErr ? (
-              <div className="text-sm text-red-700">
-                Failed to load sub-tasks: {subErr.message}
-              </div>
-            ) : (
-              <SubtaskDetailPanel
-                subtasks={subtasks ?? []}
-                taskId={task.id}
-                legacyId={task.legacy_id!}
-                totalCost={Number(task.total_cost)}
-              />
-            )}
+            <SubtaskDetailPanel
+              subtasks={subtasks}
+              taskId={task.id}
+              legacyId={n}
+              totalCost={Number(task.totalCost)}
+            />
           </Card>
 
           {/* Photos */}
           <TaskPhotosCard
-            photos={(photos ?? []) as any}
+            photos={photos}
             taskId={task.id}
-            legacyId={task.legacy_id!}
+            legacyId={n}
           />
 
           {/* Receipts */}
           <TaskReceiptsCard
-            receipts={(receipts ?? []) as any}
+            receipts={receipts}
             taskId={task.id}
-            legacyId={task.legacy_id!}
+            legacyId={n}
           />
 
           {/* TODO: Comments + comment posting — needs Server Action */}
@@ -308,7 +339,7 @@ export default async function TaskDetailPage({
                 {PRIORITY_DESC[task.priority] ?? `P${task.priority}`}
               </DetailRow>
               <DetailRow label="Due">
-                {task.due_date ? fmtDateLong(task.due_date) : <span className="text-ouc-text-muted">Not set</span>}
+                {dueDateStr ? fmtDateLong(dueDateStr) : <span className="text-ouc-text-muted">Not set</span>}
               </DetailRow>
               <DetailRow label="Category">
                 <span
@@ -327,18 +358,18 @@ export default async function TaskDetailPage({
                       href={`/contractors/${contractor.id}/edit`}
                       className="font-medium text-ouc-accent hover:underline"
                     >
-                      {contractor.business_name}
+                      {contractor.businessName}
                     </Link>
-                    {(contractor.primary_first_name || contractor.primary_last_name) && (
+                    {(contractor.primaryFirstName || contractor.primaryLastName) && (
                       <div className="mt-0.5 text-[11.5px] text-ouc-text-muted">
-                        {[contractor.primary_first_name, contractor.primary_last_name]
+                        {[contractor.primaryFirstName, contractor.primaryLastName]
                           .filter(Boolean)
                           .join(' ')}
                       </div>
                     )}
-                    {(contractor.primary_phone ?? contractor.business_phone) && (
+                    {(contractor.primaryPhone ?? contractor.businessPhone) && (
                       <div className="text-[11.5px] text-ouc-text-muted">
-                        📞 {contractor.primary_phone ?? contractor.business_phone}
+                        📞 {contractor.primaryPhone ?? contractor.businessPhone}
                       </div>
                     )}
                   </div>
@@ -347,10 +378,10 @@ export default async function TaskDetailPage({
                 )}
               </DetailRow>
               <DetailRow label="Created">
-                {fmtTimestamp(task.created_at) || <span className="text-ouc-text-muted">—</span>}
+                {fmtTimestamp(task.createdAt.toISOString()) || <span className="text-ouc-text-muted">—</span>}
               </DetailRow>
               <DetailRow label="Updated">
-                {fmtTimestamp(task.updated_at) || <span className="text-ouc-text-muted">—</span>}
+                {fmtTimestamp(task.updatedAt.toISOString()) || <span className="text-ouc-text-muted">—</span>}
               </DetailRow>
             </dl>
           </Card>
@@ -360,18 +391,18 @@ export default async function TaskDetailPage({
               <div className="flex justify-between">
                 <span>Labor (estimated)</span>
                 <span className="font-semibold tabular-nums">
-                  {fmtUSD(Number(task.total_labor_cost))}
+                  {fmtUSD(Number(task.totalLaborCost))}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Equipment (estimated)</span>
                 <span className="font-semibold tabular-nums">
-                  {fmtUSD(Number(task.total_equipment_cost))}
+                  {fmtUSD(Number(task.totalEquipmentCost))}
                 </span>
               </div>
               <div className="flex justify-between border-t border-ouc-border pt-2.5 text-[15px] font-bold text-ouc-primary">
                 <span>Total estimate</span>
-                <span className="tabular-nums">{fmtUSD(Number(task.total_cost))}</span>
+                <span className="tabular-nums">{fmtUSD(Number(task.totalCost))}</span>
               </div>
             </div>
           </Card>

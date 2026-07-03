@@ -3,8 +3,7 @@
  * Backed by the new `contractor` table. Server Component.
  */
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
-import { fmtDateLong } from '@/lib/format';
+import { prisma } from '@/lib/prisma';
 
 export const metadata = { title: 'Contractors — OUC Infrastructure Tasks' };
 
@@ -32,37 +31,56 @@ export default async function ContractorsPage({
   searchParams: Promise<{ error?: string; deleted?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('contractor')
-    .select('id, business_name, primary_first_name, primary_last_name, primary_email, primary_phone, address_line1, city, state, zipcode, business_phone, active, created_at')
-    .order('business_name');
+  const rows = await prisma.contractor.findMany({
+    select: {
+      id: true,
+      businessName: true,
+      primaryFirstName: true,
+      primaryLastName: true,
+      primaryEmail: true,
+      primaryPhone: true,
+      addressLine1: true,
+      city: true,
+      state: true,
+      zipcode: true,
+      businessPhone: true,
+      active: true,
+      createdAt: true,
+    },
+    orderBy: { businessName: 'asc' },
+  });
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load contractors:</strong> {error.message}
-      </div>
-    );
-  }
-
-  const contractors = (data ?? []) as Contractor[];
+  const contractors: Contractor[] = rows.map((c) => ({
+    id: c.id,
+    business_name: c.businessName,
+    primary_first_name: c.primaryFirstName,
+    primary_last_name: c.primaryLastName,
+    primary_email: c.primaryEmail,
+    primary_phone: c.primaryPhone,
+    address_line1: c.addressLine1,
+    city: c.city,
+    state: c.state,
+    zipcode: c.zipcode,
+    business_phone: c.businessPhone,
+    active: c.active,
+    created_at: c.createdAt.toISOString(),
+  }));
 
   // Open task counts per contractor for the "tasks" cell.
   const ids = contractors.map((c) => c.id);
   const taskCount = new Map<string, number>();
   const openCount = new Map<string, number>();
   if (ids.length > 0) {
-    const { data: links } = await supabase
-      .from('task')
-      .select('contractor_id, status')
-      .in('contractor_id', ids);
-    for (const row of links ?? []) {
-      if (!row.contractor_id) continue;
-      taskCount.set(row.contractor_id, (taskCount.get(row.contractor_id) ?? 0) + 1);
+    const links = await prisma.task.findMany({
+      where: { contractorId: { in: ids } },
+      select: { contractorId: true, status: true },
+    });
+    for (const row of links) {
+      if (!row.contractorId) continue;
+      taskCount.set(row.contractorId, (taskCount.get(row.contractorId) ?? 0) + 1);
       if (row.status !== 'done') {
-        openCount.set(row.contractor_id, (openCount.get(row.contractor_id) ?? 0) + 1);
+        openCount.set(row.contractorId, (openCount.get(row.contractorId) ?? 0) + 1);
       }
     }
   }

@@ -1,59 +1,92 @@
 'use server';
 
 /**
- * Admin user-management Server Actions.
+ * Admin user-management Server Actions (Prisma / NextAuth era).
  *
- * All actions enforce admin-role check via requireAdmin() before doing
- * anything privileged. Auth-user creation and deletion go through the
- * service-role client (Supabase Admin API); the user_profile insert/update
- * also uses the service-role client to bypass RLS.
+ * All actions enforce the admin role via requireRole('admin') before doing
+ * anything privileged — this is the application-layer replacement for the
+ * old Supabase RLS + Auth Admin API.
+ *
+ * User creation no longer goes through an auth provider:
+ *   • If the admin typed a password, it is bcrypt-hashed straight into
+ *     user_profile.password_hash (same behavior as before).
+ *   • Otherwise the profile is created with password_hash = NULL and a
+ *     one-time setup link (/auth/reset?token=…&email=…) is generated. The
+ *     sha256 hex of the raw token is stored in reset_token_hash with a
+ *     48-hour expiry — matching the /auth/reset verification scheme. We try
+ *     to email the link via SendGrid and also return it to the admin so it
+ *     can be shared manually (shown exactly once).
  */
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createHash, randomBytes, randomUUID } from 'crypto';
+import { hash as bcryptHash } from 'bcryptjs';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/auth';
+import { sendEmail } from '@/lib/email/sendgrid';
+import { appUrl, escapeHtml, htmlShell } from '@/lib/email/templates/shared';
 
 export type CreateUserState = {
   ok: boolean;
   error?: string;
   message?: string;
-  /** Password to share with the new user — visible exactly once. */
+  /** Password — or one-time setup link — to share with the new user. Visible exactly once. */
   tempPassword?: string;
   /** Email of the user just created — confirms which row succeeded. */
   email?: string;
-  /** True if the admin chose the password explicitly (vs auto-generated). */
+  /** True if the admin chose the password explicitly (vs invite link). */
   adminSetPassword?: boolean;
 };
 
 const VALID_ROLES = ['admin', 'editor', 'approver', 'viewer'] as const;
 type Role = (typeof VALID_ROLES)[number];
 
-async function requireAdmin() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated.');
+const RESET_TOKEN_TTL_MS = 48 * 60 * 60 * 1000; // 48 hours
+const BCRYPT_ROUNDS = 12;
 
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  if (profile?.role !== 'admin') {
-    throw new Error('Admin role required.');
-  }
-  return { userId: user.id };
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : 'Unexpected error.';
 }
 
-function generateTempPassword(): string {
-  // 14 chars, no ambiguous I/l/0/O — easy to dictate over the phone.
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let p = '';
-  for (let i = 0; i < 14; i++) {
-    p += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return p;
+function isUniqueViolation(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+}
+
+/** Build the one-time password-setup link and its stored hash/expiry. */
+function makeSetupLink(email: string): {
+  link: string;
+  resetTokenHash: string;
+  resetTokenExpires: Date;
+} {
+  const raw = randomBytes(32).toString('hex');
+  return {
+    link: `${appUrl()}/auth/reset?token=${raw}&email=${encodeURIComponent(email)}`,
+    resetTokenHash: createHash('sha256').update(raw).digest('hex'),
+    resetTokenExpires: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+  };
+}
+
+/** Best-effort invite email — DB write already committed, so never throw. */
+async function sendInviteEmail(args: {
+  to: string;
+  fullName: string;
+  link: string;
+}): Promise<boolean> {
+  const bodyHtml = `
+    <p>Hi ${escapeHtml(args.fullName)},</p>
+    <p>An account has been created for you on <strong>OUC Infrastructure Tasks</strong>.</p>
+    <p>Set your password using the link below (valid for 48 hours):</p>
+    <p><a href="${args.link}" style="display:inline-block;background:#333F48;color:#ffffff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;">Set your password</a></p>
+    <p style="color:#6B7480;font-size:12px;">If the button doesn't work, paste this into your browser:<br>${escapeHtml(args.link)}</p>`;
+  const result = await sendEmail({
+    to: args.to,
+    subject: 'You’ve been invited to OUC Infrastructure Tasks',
+    html: htmlShell({ title: 'Set your password', bodyHtml }),
+    text: `An account has been created for you on OUC Infrastructure Tasks.\n\nSet your password (link valid for 48 hours):\n${args.link}\n`,
+  });
+  return result.ok;
 }
 
 export async function createUser(
@@ -61,16 +94,16 @@ export async function createUser(
   formData: FormData
 ): Promise<CreateUserState> {
   try {
-    await requireAdmin();
+    await requireRole('admin');
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errMsg(e) };
   }
 
-  const firstName       = String(formData.get('firstName') ?? '').trim();
-  const lastName        = String(formData.get('lastName')  ?? '').trim();
-  const email           = String(formData.get('email')     ?? '').trim().toLowerCase();
-  const role            = String(formData.get('role')      ?? '');
-  const passwordInput   = String(formData.get('password')  ?? '');
+  const firstName     = String(formData.get('firstName') ?? '').trim();
+  const lastName      = String(formData.get('lastName')  ?? '').trim();
+  const email         = String(formData.get('email')     ?? '').trim().toLowerCase();
+  const role          = String(formData.get('role')      ?? '');
+  const passwordInput = String(formData.get('password')  ?? '');
 
   if (!firstName) return { ok: false, error: 'First name is required.' };
   if (!lastName)  return { ok: false, error: 'Last name is required.' };
@@ -86,43 +119,38 @@ export async function createUser(
   }
 
   const fullName = `${firstName} ${lastName}`;
-  // If the admin specified a password, use it. Otherwise generate one.
   const adminSetPassword = passwordInput.length > 0;
-  const tempPassword = adminSetPassword ? passwordInput : generateTempPassword();
-  const admin = createAdminClient();
 
-  // Step 1 — create the auth.users row.
-  const { data: created, error: createErr } = await admin.auth.admin.createUser({
-    email,
-    password: tempPassword,
-    email_confirm: true,
-    user_metadata: { full_name: fullName, first_name: firstName, last_name: lastName },
-  });
-  if (createErr || !created?.user) {
-    return {
-      ok: false,
-      error: createErr?.message ?? 'Could not create the auth user.',
-    };
+  // If the admin specified a password, hash it in directly. Otherwise leave
+  // password_hash NULL and issue a one-time setup link (invite flow).
+  const setup = adminSetPassword ? null : makeSetupLink(email);
+
+  try {
+    await prisma.userProfile.create({
+      data: {
+        id: randomUUID(),
+        fullName,
+        email,
+        role: role as Role,
+        active: true,
+        passwordHash: adminSetPassword
+          ? await bcryptHash(passwordInput, BCRYPT_ROUNDS)
+          : null,
+        resetTokenHash: setup?.resetTokenHash ?? null,
+        resetTokenExpires: setup?.resetTokenExpires ?? null,
+      },
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { ok: false, error: `A user with the email ${email} already exists.` };
+    }
+    return { ok: false, error: errMsg(e) };
   }
 
-  // Step 2 — insert the user_profile row.
-  const { error: profileErr } = await admin
-    .from('user_profile')
-    .insert({
-      id: created.user.id,
-      full_name: fullName,
-      email,
-      role,
-      active: true,
-    });
-  if (profileErr) {
-    // Roll back the auth user so we don't leave an orphan that can sign in
-    // but has no profile (and therefore would fail every RLS check).
-    await admin.auth.admin.deleteUser(created.user.id);
-    return {
-      ok: false,
-      error: `Auth user was created but profile insert failed; rolled back. (${profileErr.message})`,
-    };
+  // Invite flow — try to email the setup link; always surface it to the admin.
+  let emailed = false;
+  if (setup) {
+    emailed = await sendInviteEmail({ to: email, fullName, link: setup.link });
   }
 
   revalidatePath('/admin/users');
@@ -131,9 +159,11 @@ export async function createUser(
     ok: true,
     message: adminSetPassword
       ? `Created ${fullName} (${role}) with the password you specified.`
-      : `Created ${fullName} (${role}). A temporary password was generated.`,
+      : emailed
+        ? `Created ${fullName} (${role}). A password-setup link was emailed to them — the same one-time link is below (valid 48 hours).`
+        : `Created ${fullName} (${role}). Share the one-time password-setup link below (valid 48 hours).`,
     email,
-    tempPassword,
+    tempPassword: adminSetPassword ? passwordInput : setup!.link,
     adminSetPassword,
   };
 }
@@ -141,9 +171,9 @@ export async function createUser(
 export async function deleteUser(formData: FormData) {
   let actingUserId: string;
   try {
-    ({ userId: actingUserId } = await requireAdmin());
+    ({ id: actingUserId } = await requireRole('admin'));
   } catch (e) {
-    redirect(`/admin/users?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/admin/users?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   const targetId = String(formData.get('id') ?? '');
@@ -154,11 +184,12 @@ export async function deleteUser(formData: FormData) {
     redirect('/admin/users?error=cannot-delete-self');
   }
 
-  const admin = createAdminClient();
-  // Cascade on auth.users → user_profile (the schema declares ON DELETE CASCADE).
-  const { error } = await admin.auth.admin.deleteUser(targetId);
-  if (error) {
-    redirect(`/admin/users?error=${encodeURIComponent(error.message)}`);
+  try {
+    // Hard delete — FKs on task/contractor/etc. are ON DELETE SET NULL, and
+    // comments cascade, mirroring the old auth.users → user_profile cascade.
+    await prisma.userProfile.delete({ where: { id: targetId } });
+  } catch (e) {
+    redirect(`/admin/users?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/admin/users');
@@ -176,9 +207,9 @@ export async function updateUser(
   formData: FormData
 ): Promise<UpdateUserState> {
   try {
-    await requireAdmin();
+    await requireRole('admin');
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    return { ok: false, error: errMsg(e) };
   }
 
   const targetId        = String(formData.get('id')              ?? '').trim();
@@ -210,22 +241,23 @@ export async function updateUser(
   }
 
   const fullName = `${firstName} ${lastName}`;
-  const admin = createAdminClient();
 
-  const authUpdate: Parameters<typeof admin.auth.admin.updateUserById>[1] = {
-    email,
-    user_metadata: { full_name: fullName, first_name: firstName, last_name: lastName },
-  };
-  if (password) authUpdate.password = password;
+  const data: Prisma.UserProfileUpdateInput = { fullName, email, role: role as Role, active };
+  if (password) {
+    // Setting a password directly also clears any outstanding setup link.
+    data.passwordHash = await bcryptHash(password, BCRYPT_ROUNDS);
+    data.resetTokenHash = null;
+    data.resetTokenExpires = null;
+  }
 
-  const { error: authErr } = await admin.auth.admin.updateUserById(targetId, authUpdate);
-  if (authErr) return { ok: false, error: authErr.message };
-
-  const { error: profileErr } = await admin
-    .from('user_profile')
-    .update({ full_name: fullName, email, role, active })
-    .eq('id', targetId);
-  if (profileErr) return { ok: false, error: profileErr.message };
+  try {
+    await prisma.userProfile.update({ where: { id: targetId }, data });
+  } catch (e) {
+    if (isUniqueViolation(e)) {
+      return { ok: false, error: `Another user already uses the email ${email}.` };
+    }
+    return { ok: false, error: errMsg(e) };
+  }
 
   revalidatePath('/admin/users');
   revalidatePath('/admin');
@@ -234,9 +266,9 @@ export async function updateUser(
 
 export async function updateRole(formData: FormData) {
   try {
-    await requireAdmin();
+    await requireRole('admin');
   } catch (e) {
-    redirect(`/admin/users?error=${encodeURIComponent((e as Error).message)}`);
+    redirect(`/admin/users?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   const targetId = String(formData.get('id') ?? '');
@@ -249,13 +281,13 @@ export async function updateRole(formData: FormData) {
     redirect('/admin/users?error=invalid-role');
   }
 
-  const admin = createAdminClient();
-  const { error } = await admin
-    .from('user_profile')
-    .update({ role })
-    .eq('id', targetId);
-  if (error) {
-    redirect(`/admin/users?error=${encodeURIComponent(error.message)}`);
+  try {
+    await prisma.userProfile.update({
+      where: { id: targetId },
+      data: { role: role as Role },
+    });
+  } catch (e) {
+    redirect(`/admin/users?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/admin/users');

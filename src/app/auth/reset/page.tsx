@@ -1,7 +1,8 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { createHash } from 'crypto';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { updatePassword } from './actions';
 
 export const metadata = { title: 'Set New Password — OUC Infrastructure Tasks' };
@@ -15,16 +16,33 @@ const ERROR_MESSAGES: Record<string, string> = {
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; token?: string; email?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, token, email: emailRaw } = await searchParams;
+  const email = (emailRaw ?? '').trim().toLowerCase();
 
-  // Confirm the user arrived here via a valid reset link (session is present
-  // and was established by /auth/callback exchanging the PKCE code).
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    // No valid session — the link has expired or was already used.
+  // Confirm the user arrived here via a valid reset link: the token in the
+  // URL must hash to user_profile.reset_token_hash and still be unexpired.
+  if (!token || !email) {
+    redirect('/auth/forgot?error=expired');
+  }
+
+  const tokenHash = createHash('sha256').update(token).digest('hex');
+  const user = await prisma.userProfile.findUnique({
+    where: { email },
+    select: { active: true, resetTokenHash: true, resetTokenExpires: true },
+  });
+
+  const valid =
+    user != null &&
+    user.active &&
+    user.resetTokenHash != null &&
+    user.resetTokenHash === tokenHash &&
+    user.resetTokenExpires != null &&
+    user.resetTokenExpires.getTime() > Date.now();
+
+  if (!valid) {
+    // No valid token — the link has expired or was already used.
     redirect('/auth/forgot?error=expired');
   }
 
@@ -70,6 +88,9 @@ export default async function ResetPasswordPage({
           )}
 
           <form action={updatePassword} className="flex flex-col gap-3.5">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="email" value={email} />
+
             <div>
               <label
                 htmlFor="password"

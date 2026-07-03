@@ -3,7 +3,7 @@
  */
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { ContractorForm } from '@/components/ContractorForm';
 import { updateContractor, deleteContractor } from '../../actions';
 
@@ -13,13 +13,11 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from('contractor')
-    .select('business_name')
-    .eq('id', id)
-    .maybeSingle();
-  return { title: `${data?.business_name ?? 'Contractor'} — Edit` };
+  const data = await prisma.contractor.findUnique({
+    where: { id },
+    select: { businessName: true },
+  });
+  return { title: `${data?.businessName ?? 'Contractor'} — Edit` };
 }
 
 export default async function EditContractorPage({
@@ -32,21 +30,45 @@ export default async function EditContractorPage({
   const { id } = await params;
   const sp = await searchParams;
 
-  const supabase = await createClient();
-  const { data: contractor, error } = await supabase
-    .from('contractor')
-    .select('id, business_name, primary_first_name, primary_last_name, primary_email, primary_phone, address_line1, address_line2, city, state, zipcode, business_phone, notes, active')
-    .eq('id', id)
-    .maybeSingle();
+  const row = await prisma.contractor.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      businessName: true,
+      primaryFirstName: true,
+      primaryLastName: true,
+      primaryEmail: true,
+      primaryPhone: true,
+      addressLine1: true,
+      addressLine2: true,
+      city: true,
+      state: true,
+      zipcode: true,
+      businessPhone: true,
+      notes: true,
+      active: true,
+    },
+  });
 
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        Failed to load contractor: {error.message}
-      </div>
-    );
-  }
-  if (!contractor) notFound();
+  if (!row) notFound();
+
+  // Map to the snake_case shape ContractorForm expects.
+  const contractor = {
+    id: row.id,
+    business_name: row.businessName,
+    primary_first_name: row.primaryFirstName,
+    primary_last_name: row.primaryLastName,
+    primary_email: row.primaryEmail,
+    primary_phone: row.primaryPhone,
+    address_line1: row.addressLine1,
+    address_line2: row.addressLine2,
+    city: row.city,
+    state: row.state,
+    zipcode: row.zipcode,
+    business_phone: row.businessPhone,
+    notes: row.notes,
+    active: row.active,
+  };
 
   return (
     <div>

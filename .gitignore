@@ -44,3 +44,4 @@ supabase/.temp/
 /tmp/.claude/
 .claude/
 .vercel
+.env*

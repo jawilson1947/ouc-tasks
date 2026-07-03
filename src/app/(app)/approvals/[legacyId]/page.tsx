@@ -13,7 +13,7 @@
  */
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { canApproveTasks, getCurrentRole } from '@/lib/permissions';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { TaskForm } from '@/components/TaskForm';
@@ -57,73 +57,161 @@ export default async function ApprovalReviewPage({
     redirect('/dashboard?error=Task+Approval+permission+required');
   }
 
-  const supabase = await createClient();
-
-  const { data: task, error: taskErr } = await supabase
-    .from('task')
-    .select(
-      'id, legacy_id, title, description, priority, status, category_id, location_id, contractor_id, assignee_id, due_date, notes, created_by, approved_at, approved_by, requested_approval_at'
-    )
-    .eq('legacy_id', n)
-    .maybeSingle();
-
-  if (taskErr) {
+  let taskRow;
+  try {
+    taskRow = await prisma.task.findUnique({ where: { legacyId: n } });
+  } catch (e) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        Failed to load task: {taskErr.message}
+        Failed to load task: {(e as Error).message}
       </div>
     );
   }
-  if (!task) notFound();
+  if (!taskRow) notFound();
 
   const [
-    { data: categories },
-    { data: locations },
-    { data: contractors },
-    { data: users },
-    { data: subtasks },
-    { data: photos },
-    { data: receipts },
-    { data: approverProfile },
+    categoriesRaw,
+    locationsRaw,
+    contractorsRaw,
+    usersRaw,
+    subtasksRaw,
+    photosRaw,
+    receiptsRaw,
+    approverProfile,
   ] = await Promise.all([
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name').order('sort_order'),
-    supabase.from('contractor').select('id, business_name, active').order('business_name'),
-    supabase
-      .from('user_profile')
-      .select('id, full_name, role, active')
-      .in('role', ['admin', 'editor', 'approver'])
-      .order('full_name'),
-    supabase
-      .from('subtask')
-      .select('id, sequence, description, labor_cost, equipment_cost, status')
-      .eq('task_id', task.id)
-      .order('sequence'),
-    supabase
-      .from('attachment')
-      .select('id, filename, caption, storage_path, content_type, uploaded_at')
-      .eq('task_id', task.id)
-      .in('type', ['photo', 'document'])
-      .order('uploaded_at', { ascending: false }),
-    supabase
-      .from('attachment')
-      .select('id, filename, vendor, receipt_amount, receipt_date, caption, storage_path, content_type, uploaded_at')
-      .eq('task_id', task.id)
-      .eq('type', 'receipt')
-      .order('receipt_date', { ascending: false, nullsFirst: false })
-      .order('uploaded_at', { ascending: false }),
-    task.approved_by
-      ? supabase
-          .from('user_profile')
-          .select('full_name')
-          .eq('id', task.approved_by)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
+    prisma.category.findMany({
+      select: { id: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.location.findMany({
+      select: { id: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.contractor.findMany({
+      select: { id: true, businessName: true, active: true },
+      orderBy: { businessName: 'asc' },
+    }),
+    prisma.userProfile.findMany({
+      where: { role: { in: ['admin', 'editor', 'approver'] } },
+      select: { id: true, fullName: true, role: true, active: true },
+      orderBy: { fullName: 'asc' },
+    }),
+    prisma.subtask.findMany({
+      where: { taskId: taskRow.id },
+      select: {
+        id: true,
+        sequence: true,
+        description: true,
+        laborCost: true,
+        equipmentCost: true,
+        status: true,
+      },
+      orderBy: { sequence: 'asc' },
+    }),
+    prisma.attachment.findMany({
+      where: { taskId: taskRow.id, type: { in: ['photo', 'document'] } },
+      select: {
+        id: true,
+        filename: true,
+        caption: true,
+        storagePath: true,
+        contentType: true,
+        uploadedAt: true,
+      },
+      orderBy: { uploadedAt: 'desc' },
+    }),
+    prisma.attachment.findMany({
+      where: { taskId: taskRow.id, type: 'receipt' },
+      select: {
+        id: true,
+        filename: true,
+        vendor: true,
+        receiptAmount: true,
+        receiptDate: true,
+        caption: true,
+        storagePath: true,
+        contentType: true,
+        uploadedAt: true,
+      },
+      // MySQL sorts NULLs last on DESC — matches the old nullsFirst:false.
+      orderBy: [{ receiptDate: 'desc' }, { uploadedAt: 'desc' }],
+    }),
+    taskRow.approvedById
+      ? prisma.userProfile.findUnique({
+          where: { id: taskRow.approvedById },
+          select: { fullName: true },
+        })
+      : Promise.resolve(null),
   ]);
+
+  // Map Prisma camelCase rows into the snake_case / plain-value shapes the
+  // shared client components (TaskForm, SubtaskEditor, TaskPhotosCard,
+  // TaskReceiptsCard) expect.
+  const task = {
+    id: taskRow.id,
+    legacy_id: taskRow.legacyId,
+    title: taskRow.title,
+    description: taskRow.description,
+    priority: taskRow.priority,
+    status: taskRow.status as string,
+    category_id: taskRow.categoryId,
+    location_id: taskRow.locationId,
+    contractor_id: taskRow.contractorId,
+    assignee_id: taskRow.assigneeId,
+    due_date: taskRow.dueDate ? taskRow.dueDate.toISOString().slice(0, 10) : null,
+    notes: taskRow.notes,
+    created_by: taskRow.createdById,
+    approved_at: taskRow.approvedAt ? taskRow.approvedAt.toISOString() : null,
+    approved_by: taskRow.approvedById,
+    requested_approval_at: taskRow.requestedApprovalAt
+      ? taskRow.requestedApprovalAt.toISOString()
+      : null,
+  };
+
+  const categories = categoriesRaw;
+  const locations = locationsRaw;
+  const contractors = contractorsRaw.map((c) => ({
+    id: c.id,
+    business_name: c.businessName,
+    active: c.active,
+  }));
+  const users = usersRaw.map((u) => ({
+    id: u.id,
+    full_name: u.fullName,
+    role: u.role as string,
+    active: u.active,
+  }));
+  const subtasks = subtasksRaw.map((s) => ({
+    id: s.id,
+    sequence: s.sequence,
+    description: s.description,
+    labor_cost: Number(s.laborCost),
+    equipment_cost: Number(s.equipmentCost),
+    status: s.status as string,
+  }));
+  const photos = photosRaw.map((p) => ({
+    id: p.id,
+    filename: p.filename,
+    caption: p.caption,
+    storage_path: p.storagePath,
+    content_type: p.contentType,
+    uploaded_at: p.uploadedAt.toISOString(),
+  }));
+  const receipts = receiptsRaw.map((r) => ({
+    id: r.id,
+    filename: r.filename,
+    vendor: r.vendor,
+    receipt_amount: r.receiptAmount != null ? Number(r.receiptAmount) : null,
+    receipt_date: r.receiptDate ? r.receiptDate.toISOString().slice(0, 10) : null,
+    caption: r.caption,
+    storage_path: r.storagePath,
+    content_type: r.contentType,
+    uploaded_at: r.uploadedAt.toISOString(),
+  }));
 
   const isApproved   = !!task.approved_at;
   const canRevokeNow = isApproved && task.status === 'not_started';
-  const approverName = approverProfile?.full_name ?? null;
+  const approverName = approverProfile?.fullName ?? null;
 
   return (
     <div className="pb-24">
@@ -203,29 +291,29 @@ export default async function ApprovalReviewPage({
       <TaskForm
         action={updateTaskAsApprover}
         defaults={task}
-        categories={categories ?? []}
-        locations={locations ?? []}
-        contractors={contractors ?? []}
-        users={users ?? []}
+        categories={categories}
+        locations={locations}
+        contractors={contractors}
+        users={users}
         submitLabel="Save changes"
         isEdit
         cancelHref="/approvals"
       />
 
       <SubtaskEditor
-        subtasks={subtasks ?? []}
+        subtasks={subtasks}
         taskId={task.id}
         legacyId={task.legacy_id!}
       />
 
       <TaskPhotosCard
-        photos={(photos ?? []) as any}
+        photos={photos}
         taskId={task.id}
         legacyId={task.legacy_id!}
       />
 
       <TaskReceiptsCard
-        receipts={(receipts ?? []) as any}
+        receipts={receipts}
         taskId={task.id}
         legacyId={task.legacy_id!}
       />

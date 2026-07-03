@@ -7,7 +7,7 @@
  * (Chart.js needs a Client Component wrapper).
  */
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { fmtDate, fmtToday } from '@/lib/format';
 
@@ -82,34 +82,55 @@ type TaskRow = {
 };
 
 export default async function DashboardPage() {
-  const supabase = await createClient();
-
-  const [
-    { data: tasksData, error: tasksErr },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, due_date, total_labor_cost, total_equipment_cost, total_cost, subtask_count, subtask_done_count, approved_at')
-      .neq('status', 'closed')
-      .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false }),
-    supabase.from('category').select('id, name'),
-    supabase.from('location').select('id, name'),
-  ]);
-
-  if (tasksErr) {
+  let tasksRaw, cats, locs;
+  try {
+    [tasksRaw, cats, locs] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        where: { status: { not: 'closed' } },
+      }),
+      prisma.category.findMany({ select: { id: true, name: true } }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
+    ]);
+  } catch (e) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load dashboard:</strong> {tasksErr.message}
+        <strong>Failed to load dashboard:</strong> {(e as Error).message}
       </div>
     );
   }
 
-  const tasks = (tasksData ?? []) as TaskRow[];
-  const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
-  const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
+  // Sort: priority desc, then due_date asc with NULLs last (matches the old
+  // Supabase `nullsFirst: false` — MySQL sorts NULLs first on ASC, so we
+  // sort in JS instead).
+  tasksRaw.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    const da = a.dueDate?.getTime() ?? Infinity;
+    const db = b.dueDate?.getTime() ?? Infinity;
+    return da - db;
+  });
+
+  // Map Prisma camelCase rows (Decimal/BigInt/Date) into the snake_case
+  // plain-value shape the markup below renders.
+  const tasks: TaskRow[] = tasksRaw.map((t) => ({
+    id: t.id,
+    legacy_id: t.legacyId,
+    title: t.title,
+    priority: t.priority,
+    status: t.status,
+    category_id: t.categoryId,
+    location_id: t.locationId,
+    assignee_id: t.assigneeId,
+    due_date: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+    total_labor_cost: Number(t.totalLaborCost),
+    total_equipment_cost: Number(t.totalEquipmentCost),
+    total_cost: Number(t.totalCost),
+    subtask_count: Number(t.subtaskCount),
+    subtask_done_count: Number(t.subtaskDoneCount),
+    approved_at: t.approvedAt ? t.approvedAt.toISOString() : null,
+  }));
+
+  const catName = new Map<number, string>(cats.map((c) => [c.id, c.name]));
+  const locName = new Map<number, string>(locs.map((l) => [l.id, l.name]));
 
   // Aggregates
   const total = tasks.reduce((sum, t) => sum + Number(t.total_cost), 0);

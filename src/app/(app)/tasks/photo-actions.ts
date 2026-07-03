@@ -1,37 +1,33 @@
 'use server';
 
+/**
+ * Delete a photo/document attachment: allowed for admins or the original
+ * uploader (same rule the Supabase RLS policy enforced). Removes the Vercel
+ * Blob first (best-effort — del() accepts the pathname stored in
+ * storage_path; already-gone blobs are ignored), then the attachment row.
+ */
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
-import { createClient as createServiceClient } from '@supabase/supabase-js';
-
-const BUCKET = process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ?? 'receipts';
+import { del } from '@vercel/blob';
+import { getSessionUser } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
 
 export async function deletePhoto(attachmentId: string, legacyId: number) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) throw new Error('Not authenticated');
 
-  const { data: att } = await supabase
-    .from('attachment')
-    .select('id, storage_path, uploaded_by')
-    .eq('id', attachmentId)
-    .maybeSingle();
+  const att = await prisma.attachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, storagePath: true, uploadedById: true },
+  });
   if (!att) throw new Error('Photo not found');
 
-  const { data: profile } = await supabase
-    .from('user_profile').select('role').eq('id', user.id).maybeSingle();
-  const isAdmin = profile?.role === 'admin';
-  const isOwner = att.uploaded_by === user.id;
+  const isAdmin = user.role === 'admin';
+  const isOwner = att.uploadedById === user.id;
   if (!isAdmin && !isOwner) throw new Error('Permission denied');
 
-  const svc = createServiceClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
-  );
-
-  await svc.storage.from(BUCKET).remove([att.storage_path]);
-  await svc.from('attachment').delete().eq('id', attachmentId);
+  // Best-effort blob cleanup; the DB row is the source of truth.
+  await del(att.storagePath).catch(() => {});
+  await prisma.attachment.delete({ where: { id: attachmentId } });
 
   revalidatePath(`/tasks/${legacyId}`);
 }

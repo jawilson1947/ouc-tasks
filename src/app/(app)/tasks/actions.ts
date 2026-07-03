@@ -3,9 +3,10 @@
 /**
  * Task CRUD Server Actions: createTask, updateTask, deleteTask.
  *
- * Authorization: admin, editor, and approver can write. RLS at the DB
- * enforces "editor can only mutate own tasks"; admin and approver may
- * mutate anything. We re-check here so error messages are friendly.
+ * Authorization: admin, editor, and approver can write. Supabase RLS is gone
+ * (MySQL has no row-level security), so the rule it used to enforce —
+ * "editor can only mutate own tasks; admin and approver may mutate anything"
+ * — is now checked explicitly here.
  *
  * Approval semantics: new tasks are always created unapproved
  * (approved_at = NULL). Approval is a separate, explicit action performed
@@ -15,7 +16,9 @@
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import type { TaskStatus } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { requireRole, type SessionUser } from '@/lib/auth';
 import { readForm, validate } from './form-helpers';
 import { sendTaskDoneEmail } from '@/lib/email/sendTaskDoneEmail';
 import {
@@ -23,29 +26,22 @@ import {
   sendTaskUpdatedEmail,
 } from '@/lib/email/sendTaskAssignedEmail';
 
-const ROLES_THAT_CAN_WRITE = new Set(['admin', 'editor', 'approver']);
-
-async function requireWriter() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated.');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role, full_name')
-    .eq('id', user.id)
-    .maybeSingle();
-  const role = profile?.role ?? '';
-  if (!ROLES_THAT_CAN_WRITE.has(role)) {
+/** requireRole(), but with the friendly error messages the redirects show. */
+async function requireWriter(): Promise<SessionUser> {
+  try {
+    return await requireRole('admin', 'editor', 'approver');
+  } catch (e) {
+    if ((e as Error).message === 'Not authenticated') {
+      throw new Error('Not authenticated.');
+    }
     throw new Error('You need admin, editor, or approver role to manage tasks.');
   }
-  return { supabase, userId: user.id, role, fullName: profile?.full_name ?? null };
 }
 
 export async function createTask(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
-  let userId: string;
+  let user: SessionUser;
   try {
-    ({ supabase, userId } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks/new?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -55,38 +51,36 @@ export async function createTask(formData: FormData) {
   if (err) redirect(`/tasks/new?error=${encodeURIComponent(err)}`);
 
   // Compute next legacy_id (max + 1) so URLs stay human-readable.
-  const { data: maxRow } = await supabase
-    .from('task')
-    .select('legacy_id')
-    .not('legacy_id', 'is', null)
-    .order('legacy_id', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const nextLegacyId = (maxRow?.legacy_id ?? 0) + 1;
+  const { _max } = await prisma.task.aggregate({ _max: { legacyId: true } });
+  const nextLegacyId = (_max.legacyId ?? 0) + 1;
 
-  const { data: created, error: insertErr } = await supabase
-    .from('task')
-    .insert({
-      legacy_id: nextLegacyId,
-      title: fields.title,
-      description: fields.description,
-      priority: fields.priority,
-      status: fields.status,
-      category_id: fields.category_id,
-      location_id: fields.location_id,
-      contractor_id: fields.contractor_id,
-      assignee_id: fields.assignee_id,
-      due_date: fields.due_date,
-      notes: fields.notes,
-      created_by: userId,
-    })
-    .select('legacy_id')
-    .single();
+  let createdLegacyId: number | null = null;
+  let insertErr: string | null = null;
+  try {
+    const created = await prisma.task.create({
+      data: {
+        legacyId: nextLegacyId,
+        title: fields.title!,
+        description: fields.description,
+        priority: fields.priority!,
+        status: fields.status as TaskStatus,
+        categoryId: fields.category_id,
+        locationId: fields.location_id,
+        contractorId: fields.contractor_id,
+        assigneeId: fields.assignee_id,
+        dueDate: fields.due_date ? new Date(fields.due_date) : null,
+        notes: fields.notes,
+        createdById: user.id,
+      },
+      select: { legacyId: true },
+    });
+    createdLegacyId = created.legacyId;
+  } catch (e) {
+    insertErr = e instanceof Error ? e.message : 'Insert failed';
+  }
 
-  if (insertErr || !created) {
-    redirect(
-      `/tasks/new?error=${encodeURIComponent(insertErr?.message ?? 'Insert failed')}`
-    );
+  if (createdLegacyId == null) {
+    redirect(`/tasks/new?error=${encodeURIComponent(insertErr ?? 'Insert failed')}`);
   }
 
   revalidatePath('/tasks');
@@ -95,19 +89,19 @@ export async function createTask(formData: FormData) {
 
   // Notify the assignee that they've been assigned this task.
   // Best-effort: DB write already committed, so we never block the redirect.
-  if (fields.assignee_id && created) {
+  if (fields.assignee_id) {
+    const taskLegacyId = createdLegacyId;
     (async () => {
-      const { data: assignee } = await supabase
-        .from('user_profile')
-        .select('email, full_name')
-        .eq('id', fields.assignee_id!)
-        .maybeSingle();
+      const assignee = await prisma.userProfile.findUnique({
+        where: { id: fields.assignee_id! },
+        select: { email: true, fullName: true },
+      });
       if (assignee?.email) {
         await sendTaskAssignedEmail({
           assigneeEmail: assignee.email,
-          assigneeName: assignee.full_name ?? null,
+          assigneeName: assignee.fullName ?? null,
           taskTitle: fields.title ?? '',
-          taskLegacyId: created.legacy_id,
+          taskLegacyId,
           dueDate: fields.due_date ?? null,
           priority: fields.priority ?? null,
         });
@@ -117,17 +111,17 @@ export async function createTask(formData: FormData) {
     );
   }
 
-  redirect(`/tasks/${created.legacy_id}?created=1`);
+  redirect(`/tasks/${createdLegacyId}?created=1`);
 }
 
 export async function updateTask(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
-  let fullName: string | null = null;
+  let user: SessionUser;
   try {
-    ({ supabase, fullName } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks?error=${encodeURIComponent((e as Error).message)}`);
   }
+  const fullName: string | null = user.name || null;
 
   const id = String(formData.get('id') ?? '').trim();
   const legacyIdRaw = String(formData.get('legacy_id') ?? '').trim();
@@ -142,12 +136,17 @@ export async function updateTask(formData: FormData) {
 
   // Fetch the current status before writing so we can detect a transition to
   // "done" and notify approvers. Also captures title and legacy_id for the email.
-  const { data: existing } = await supabase
-    .from('task')
-    .select('status, title, legacy_id')
-    .eq('id', id)
-    .maybeSingle();
+  const existing = await prisma.task.findUnique({
+    where: { id },
+    select: { status: true, title: true, legacyId: true, createdById: true },
+  });
   const previousStatus = existing?.status ?? null;
+
+  // Ownership rule formerly enforced by RLS: editors may only mutate their
+  // own tasks. Admin and approver may mutate anything.
+  if (user.role === 'editor' && existing && existing.createdById !== user.id) {
+    redirect(`/tasks/${legacyIdRaw}?error=Editors+can+only+edit+tasks+they+created`);
+  }
 
   // Receipt guard: if the incoming status is "done" and the task has subtasks
   // with equipment costs, at least one receipt must be attached. If the check
@@ -155,26 +154,22 @@ export async function updateTask(formData: FormData) {
   // the user back to the detail page with a clear error — the main update
   // never runs.
   if (fields.status === 'done') {
-    const [{ count: equipCount }, { count: receiptCount }] = await Promise.all([
-      supabase
-        .from('subtask')
-        .select('id', { count: 'exact', head: true })
-        .eq('task_id', id)
-        .gt('equipment_cost', 0),
-      supabase
-        .from('attachment')
-        .select('id', { count: 'exact', head: true })
-        .eq('task_id', id)
-        .eq('type', 'receipt'),
+    const [equipCount, receiptCount] = await Promise.all([
+      prisma.subtask.count({
+        where: { taskId: id, equipmentCost: { gt: 0 } },
+      }),
+      prisma.attachment.count({
+        where: { taskId: id, type: 'receipt' },
+      }),
     ]);
 
-    if ((equipCount ?? 0) > 0 && (receiptCount ?? 0) === 0) {
+    if (equipCount > 0 && receiptCount === 0) {
       // Reset to in_progress if the task is not already there.
       if (previousStatus !== 'in_progress') {
-        await supabase
-          .from('task')
-          .update({ status: 'in_progress' })
-          .eq('id', id);
+        await prisma.task.update({
+          where: { id },
+          data: { status: 'in_progress' },
+        });
         revalidatePath('/tasks');
         revalidatePath('/dashboard');
         revalidatePath('/board');
@@ -191,45 +186,49 @@ export async function updateTask(formData: FormData) {
   // When a task is set to Blocked, clear all approval data so it must go
   // through the approval process again once the block is resolved.
   const approvalClear = fields.status === 'blocked'
-    ? { approved_at: null, approved_by: null, requested_approval_at: null }
+    ? { approvedAt: null, approvedById: null, requestedApprovalAt: null }
     : {};
 
-  const { error } = await supabase
-    .from('task')
-    .update({
-      title: fields.title,
-      description: fields.description,
-      priority: fields.priority,
-      status: fields.status,
-      category_id: fields.category_id,
-      location_id: fields.location_id,
-      contractor_id: fields.contractor_id,
-      assignee_id: fields.assignee_id,
-      due_date: fields.due_date,
-      notes: fields.notes,
-      ...approvalClear,
-    })
-    .eq('id', id);
+  let updateErr: string | null = null;
+  try {
+    await prisma.task.update({
+      where: { id },
+      data: {
+        title: fields.title!,
+        description: fields.description,
+        priority: fields.priority!,
+        status: fields.status as TaskStatus,
+        categoryId: fields.category_id,
+        locationId: fields.location_id,
+        contractorId: fields.contractor_id,
+        assigneeId: fields.assignee_id,
+        dueDate: fields.due_date ? new Date(fields.due_date) : null,
+        notes: fields.notes,
+        ...approvalClear,
+      },
+    });
+  } catch (e) {
+    updateErr = e instanceof Error ? e.message : 'Update failed';
+  }
 
-  if (error) {
-    redirect(`/tasks/${legacyIdRaw}/edit?error=${encodeURIComponent(error.message)}`);
+  if (updateErr) {
+    redirect(`/tasks/${legacyIdRaw}/edit?error=${encodeURIComponent(updateErr)}`);
   }
 
   // If the editor chose to notify the assignee, send them an update email.
   // Best-effort: DB write already committed.
   if (notifyAssignee && fields.assignee_id && existing) {
     (async () => {
-      const { data: assignee } = await supabase
-        .from('user_profile')
-        .select('email, full_name')
-        .eq('id', fields.assignee_id!)
-        .maybeSingle();
+      const assignee = await prisma.userProfile.findUnique({
+        where: { id: fields.assignee_id! },
+        select: { email: true, fullName: true },
+      });
       if (assignee?.email) {
         await sendTaskUpdatedEmail({
           assigneeEmail: assignee.email,
-          assigneeName: assignee.full_name ?? null,
+          assigneeName: assignee.fullName ?? null,
           taskTitle: fields.title ?? '',
-          taskLegacyId: existing.legacy_id,
+          taskLegacyId: existing.legacyId,
           dueDate: fields.due_date ?? null,
           priority: fields.priority ?? null,
           updatedByName: fullName?.trim() || null,
@@ -243,25 +242,24 @@ export async function updateTask(formData: FormData) {
   // If the task just became Done, email all active approvers and admins.
   // Best-effort: DB write already succeeded so we never block the redirect.
   if (fields.status === 'done' && previousStatus !== 'done' && existing) {
-    const { data: recipientRows } = await supabase
-      .from('user_profile')
-      .select('email, full_name')
-      .in('role', ['admin', 'approver'])
-      .eq('active', true)
-      .not('email', 'is', null);
+    const recipientRows = await prisma.userProfile.findMany({
+      where: {
+        role: { in: ['admin', 'approver'] },
+        active: true,
+      },
+      select: { email: true, fullName: true },
+    });
 
-    const recipients = (recipientRows ?? [])
-      .filter((r): r is { email: string; full_name: string | null } =>
-        typeof r.email === 'string' && r.email.trim() !== ''
-      )
-      .map((r) => ({ email: r.email, fullName: r.full_name }));
+    const recipients = recipientRows
+      .filter((r) => r.email.trim() !== '')
+      .map((r) => ({ email: r.email, fullName: r.fullName }));
 
     if (recipients.length > 0) {
       const completedByName = fullName?.trim() || 'A team member';
       sendTaskDoneEmail({
         recipients,
         taskTitle: existing.title,
-        taskLegacyId: existing.legacy_id,
+        taskLegacyId: existing.legacyId,
         completedByName,
       }).catch((e) =>
         console.error('[email] task-done fan-out threw unexpectedly:', e)
@@ -277,9 +275,9 @@ export async function updateTask(formData: FormData) {
 }
 
 export async function deleteTask(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
+  let user: SessionUser;
   try {
-    ({ supabase } = await requireWriter());
+    user = await requireWriter();
   } catch (e) {
     redirect(`/tasks?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -287,9 +285,26 @@ export async function deleteTask(formData: FormData) {
   const id = String(formData.get('id') ?? '').trim();
   if (!id) redirect('/tasks?error=Missing+task+id');
 
-  const { error } = await supabase.from('task').delete().eq('id', id);
-  if (error) {
-    redirect(`/tasks?error=${encodeURIComponent(error.message)}`);
+  // Ownership rule formerly enforced by RLS: editors may only delete their
+  // own tasks. Admin and approver may delete anything.
+  if (user.role === 'editor') {
+    const existing = await prisma.task.findUnique({
+      where: { id },
+      select: { createdById: true },
+    });
+    if (existing && existing.createdById !== user.id) {
+      redirect('/tasks?error=Editors+can+only+delete+tasks+they+created');
+    }
+  }
+
+  let deleteErr: string | null = null;
+  try {
+    await prisma.task.delete({ where: { id } });
+  } catch (e) {
+    deleteErr = e instanceof Error ? e.message : 'Delete failed';
+  }
+  if (deleteErr) {
+    redirect(`/tasks?error=${encodeURIComponent(deleteErr)}`);
   }
 
   revalidatePath('/tasks');

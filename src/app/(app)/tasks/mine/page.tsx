@@ -4,7 +4,8 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { Pagination, buildPageHref } from '@/components/Pagination';
 import { fmtDate, fmtUSD } from '@/lib/format';
@@ -42,57 +43,59 @@ export default async function MyTasksPage({
   searchParams: Promise<{ page?: string }>;
 }) {
   const sp = await searchParams;
-  const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login');
 
   // Current page (1-indexed). Bad input clamps to 1.
   const requestedPage = Math.max(1, Number(sp.page) || 1);
-  const from = (requestedPage - 1) * PAGE_SIZE;
-  const to   = from + PAGE_SIZE - 1;
 
-  const [
-    { data: tasksData, error: tasksErr, count: totalCount },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select(
-        'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at',
-        { count: 'exact' }
-      )
-      .eq('assignee_id', user.id)
-      .neq('status', 'closed')
-      .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .range(from, to),
-    supabase.from('category').select('id, name'),
-    supabase.from('location').select('id, name'),
+  const [rows, cats, locs] = await Promise.all([
+    prisma.taskWithTotals.findMany({
+      where: { assigneeId: user.id, status: { not: 'closed' } },
+    }),
+    prisma.category.findMany({ select: { id: true, name: true } }),
+    prisma.location.findMany({ select: { id: true, name: true } }),
   ]);
 
-  if (tasksErr) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load my tasks:</strong> {tasksErr.message}
-      </div>
-    );
-  }
+  // Sort: priority desc, then due date asc with NULLs last (mirrors the old
+  // Supabase `nullsFirst: false`, which MySQL can't express natively). The
+  // per-user queue is small, so sorting + paginating in JS is fine.
+  rows.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.dueDate && b.dueDate) return a.dueDate.getTime() - b.dueDate.getTime();
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return 0;
+  });
 
-  const tasks = (tasksData ?? []) as MyTask[];
-  const catName = new Map<number, string>((cats ?? []).map((c) => [c.id, c.name]));
-  const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
+  const catName = new Map<number, string>(cats.map((c) => [c.id, c.name]));
+  const locName = new Map<number, string>(locs.map((l) => [l.id, l.name]));
 
-  // Pagination derived values. The summary/status counts now reflect the
-  // current page slice rather than the user's whole queue — accurate
-  // aggregate counts would need a second query and aren't worth the round-trip
-  // for this view.
-  const total       = totalCount ?? tasks.length;
+  // Pagination derived values. The summary/status counts reflect the current
+  // page slice rather than the user's whole queue (unchanged behavior).
+  const total       = rows.length;
   const totalPages  = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(requestedPage, totalPages);
   const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const showingTo   = Math.min(currentPage * PAGE_SIZE, total);
+
+  const tasks: MyTask[] = rows
+    .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    .map((t) => ({
+      id: t.id,
+      legacy_id: t.legacyId,
+      title: t.title,
+      priority: t.priority,
+      status: t.status,
+      category_id: t.categoryId,
+      location_id: t.locationId,
+      due_date: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+      total_cost: Number(t.totalCost),
+      subtask_count: Number(t.subtaskCount),
+      subtask_done_count: Number(t.subtaskDoneCount),
+      approved_at: t.approvedAt ? t.approvedAt.toISOString() : null,
+    }));
 
   return (
     <div>

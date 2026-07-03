@@ -9,9 +9,9 @@
  */
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/auth';
 import { Sidebar } from '@/components/Sidebar';
-import { canApproveTasks, type AppRole } from '@/lib/permissions';
+import { canApproveTasks } from '@/lib/permissions';
 
 function initialsFrom(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -25,20 +25,14 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login');
 
-  // Pull display name from user_profile if it exists, else fall back to email.
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('full_name, email, role')
-    .eq('id', user.id)
-    .maybeSingle();
-
-  const displayName = profile?.full_name ?? user.email ?? 'User';
+  // Display name comes straight from the session JWT (full_name at sign-in),
+  // falling back to the email address.
+  const displayName = user.name || user.email || 'User';
   const initials = initialsFrom(displayName);
-  const canApprove = canApproveTasks((profile?.role ?? null) as AppRole | null);
+  const canApprove = canApproveTasks(user.role);
 
   return (
     <div className="grid min-h-screen grid-cols-[240px_1fr] bg-ouc-surface">

@@ -11,7 +11,9 @@
 import { Suspense } from 'react';
 import { redirect } from 'next/navigation';
 import Image from 'next/image';
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
+import { getSessionUser } from '@/lib/auth';
+import type { TaskStatus } from '@prisma/client';
 import { fmtDateLong, fmtDateLonger } from '@/lib/format';
 
 export const metadata = { title: 'Task Report — OUC Infrastructure' };
@@ -30,7 +32,7 @@ type Subtask = {
 
 type Task = {
   id: string;
-  legacy_id: number;
+  legacy_id: number | null;
   title: string;
   priority: number;
   status: string;
@@ -111,8 +113,7 @@ export default async function PrintReportPage({
   const approvedFilter = activeStatuses.includes('approved');
   const realStatuses = activeStatuses.filter((s) => s !== 'approved');
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) redirect('/login?next=/reports/print');
 
   // Only fetch data once the user has chosen statuses
@@ -123,59 +124,75 @@ export default async function PrintReportPage({
   let grandTotal = 0;
 
   if (reportReady) {
-    // Build the task query: 'approved' filter mirrors the /approvals page —
+    // Build the task filter: 'approved' filter mirrors the /approvals page —
     // any task with requested_approval_at IS NOT NULL, excluding blocked and
-    // closed, ordered by priority then legacy_id. Status filters use .in()
-    // on status. The two are mutually exclusive in the UI (single-select
-    // radio) so we apply whichever was picked.
-    let taskQuery = supabase
-      .from('task_with_totals')
-      .select('id, legacy_id, title, priority, status, category_id, location_id, assignee_id, contractor_id, due_date, notes, total_labor_cost, total_equipment_cost, total_cost');
+    // closed, ordered by priority then legacy_id. Status filters use
+    // status IN (...). The two are mutually exclusive in the UI
+    // (single-select radio) so we apply whichever was picked.
+    const where = approvedFilter
+      ? {
+          requestedApprovalAt: { not: null },
+          status: { notIn: ['blocked', 'closed'] as TaskStatus[] },
+        }
+      : { status: { in: realStatuses as TaskStatus[] } };
 
-    if (approvedFilter) {
-      taskQuery = taskQuery
-        .not('requested_approval_at', 'is', null)
-        .neq('status', 'blocked')
-        .neq('status', 'closed');
-    } else if (realStatuses.length > 0) {
-      taskQuery = taskQuery.in('status', realStatuses);
-    }
-
-    const [
-      { data: tasksData },
-      subtasksResult,
-      { data: locs },
-      { data: users },
-      { data: contractors },
-    ] = await Promise.all([
-      taskQuery
-        .order('priority', { ascending: false })
-        .order('legacy_id', { ascending: true }),
+    const [tasksData, subtasksData, locs, users, contractors] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        where,
+        orderBy: [{ priority: 'desc' }, { legacyId: 'asc' }],
+      }),
       isSummary
-        ? Promise.resolve({ data: [] })
-        : supabase.from('subtask').select('id, task_id, sequence, description, labor_cost, equipment_cost, status').order('sequence'),
-      supabase.from('location').select('id, name'),
-      supabase.from('user_profile').select('id, full_name'),
-      supabase.from('contractor').select('id, business_name'),
+        ? Promise.resolve([])
+        : prisma.subtask.findMany({
+            select: {
+              id: true,
+              taskId: true,
+              sequence: true,
+              description: true,
+              laborCost: true,
+              equipmentCost: true,
+              status: true,
+            },
+            orderBy: { sequence: 'asc' },
+          }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
+      prisma.userProfile.findMany({ select: { id: true, fullName: true } }),
+      prisma.contractor.findMany({ select: { id: true, businessName: true } }),
     ]);
-    const subtasksData = subtasksResult.data;
 
-    locMap  = new Map((locs  ?? []).map((l) => [l.id, l.name]));
-    userMap = new Map((users ?? []).map((u) => [u.id, u.full_name]));
-    conMap  = new Map((contractors ?? []).map((c) => [c.id, c.business_name]));
+    locMap  = new Map(locs.map((l) => [l.id, l.name]));
+    userMap = new Map(users.map((u) => [u.id, u.fullName]));
+    conMap  = new Map(contractors.map((c) => [c.id, c.businessName]));
 
     const subMap = new Map<string, Subtask[]>();
-    for (const s of (subtasksData ?? [])) {
-      const arr = subMap.get(s.task_id) ?? [];
-      arr.push(s as Subtask);
-      subMap.set(s.task_id, arr);
+    for (const s of subtasksData) {
+      const arr = subMap.get(s.taskId) ?? [];
+      arr.push({
+        id: s.id,
+        sequence: s.sequence,
+        description: s.description,
+        labor_cost: Number(s.laborCost),
+        equipment_cost: Number(s.equipmentCost),
+        status: s.status,
+      });
+      subMap.set(s.taskId, arr);
     }
 
-    tasks = (tasksData ?? []).map((t) => ({
-      ...t,
-      total_labor_cost:     Number(t.total_labor_cost),
-      total_equipment_cost: Number(t.total_equipment_cost),
-      total_cost:           Number(t.total_cost),
+    tasks = tasksData.map((t) => ({
+      id: t.id,
+      legacy_id: t.legacyId,
+      title: t.title,
+      priority: t.priority,
+      status: t.status,
+      category_id: t.categoryId,
+      location_id: t.locationId,
+      assignee_id: t.assigneeId,
+      contractor_id: t.contractorId,
+      due_date: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+      notes: t.notes,
+      total_labor_cost:     Number(t.totalLaborCost),
+      total_equipment_cost: Number(t.totalEquipmentCost),
+      total_cost:           Number(t.totalCost),
       subtasks:             subMap.get(t.id) ?? [],
     }));
 

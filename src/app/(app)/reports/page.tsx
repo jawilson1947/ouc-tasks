@@ -4,7 +4,7 @@
  * V1 scope: Cost by Category, Cost by Priority, Cost by Location, Status
  * Distribution. Charts (Chart.js) and PDF export are TODOs.
  */
-import { createClient } from '@/lib/supabase/server';
+import { prisma } from '@/lib/prisma';
 import { fmtUSD, fmtDateLonger } from '@/lib/format';
 import { STATUS_LABEL, STATUS_ORDER, STATUS_DOT } from '@/lib/task-display';
 import { ReportsExportBar } from '@/components/ReportsExportBar';
@@ -38,31 +38,45 @@ function categoryBarColor(name: string | undefined): string {
 }
 
 export default async function ReportsPage() {
-  const supabase = await createClient();
+  let tasks: ReportTask[];
+  let categories: { id: number; name: string }[];
+  let locations: { id: number; name: string }[];
 
-  const [
-    { data: tasksData, error: tasksErr },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    supabase
-      .from('task_with_totals')
-      .select('priority, status, category_id, location_id, total_cost'),
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name'),
-  ]);
+  try {
+    const [tasksData, cats, locs] = await Promise.all([
+      prisma.taskWithTotals.findMany({
+        select: {
+          priority: true,
+          status: true,
+          categoryId: true,
+          locationId: true,
+          totalCost: true,
+        },
+      }),
+      prisma.category.findMany({
+        select: { id: true, name: true },
+        orderBy: { sortOrder: 'asc' },
+      }),
+      prisma.location.findMany({ select: { id: true, name: true } }),
+    ]);
 
-  if (tasksErr) {
+    tasks = tasksData.map((t) => ({
+      priority: t.priority,
+      status: t.status,
+      category_id: t.categoryId,
+      location_id: t.locationId,
+      total_cost: Number(t.totalCost),
+    }));
+    categories = cats;
+    locations = locs;
+  } catch (err) {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load reports:</strong> {tasksErr.message}
+        <strong>Failed to load reports:</strong>{' '}
+        {err instanceof Error ? err.message : 'Unknown error'}
       </div>
     );
   }
-
-  const tasks = (tasksData ?? []) as ReportTask[];
-  const categories = cats ?? [];
-  const locations = locs ?? [];
   const catName = new Map<number, string>(categories.map((c) => [c.id, c.name]));
   const locName = new Map<number, string>(locations.map((l) => [l.id, l.name]));
 

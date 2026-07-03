@@ -7,7 +7,8 @@
  * Visual reference: docs/mockups/dashboard.html (table styling).
  */
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/server';
+import type { Prisma, TaskStatus } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 import { ApprovalBadge } from '@/components/ApprovalBadge';
 import { Pagination } from '@/components/Pagination';
 import { fmtDate } from '@/lib/format';
@@ -142,71 +143,61 @@ export default async function TasksPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
 
   // Current page (1-indexed). Negative / non-numeric values clamp to 1.
   const requestedPage = Math.max(1, Number(params.page) || 1);
-  const from = (requestedPage - 1) * PAGE_SIZE;
-  const to   = from + PAGE_SIZE - 1;
 
-  // Build the query with the active filters applied server-side.
-  // count:'exact' lets us return the total matching row count in the same
-  // round-trip — needed for the pagination bar.
-  let q = supabase
-    .from('task_with_totals')
-    .select(
-      'id, legacy_id, title, priority, status, category_id, location_id, due_date, total_cost, subtask_count, subtask_done_count, approved_at',
-      { count: 'exact' }
-    );
+  // Build the where clause with the active filters applied server-side.
+  const where: Prisma.TaskWithTotalsWhereInput = {};
 
   if (params.q && params.q.trim()) {
-    q = q.ilike('title', `%${params.q.trim()}%`);
+    // MySQL's default collation makes `contains` case-insensitive (was ilike).
+    where.title = { contains: params.q.trim() };
   }
 
   // Closed tasks are hidden from all standard views. The user can explicitly
   // opt in by selecting the "Closed" filter chip (?status=closed). Any other
   // status filter shows only that status (and still excludes closed).
   if (params.status === 'closed') {
-    q = q.eq('status', 'closed');
+    where.status = 'closed';
+  } else if (
+    params.status &&
+    STATUS_ORDER.includes(params.status as typeof STATUS_ORDER[number])
+  ) {
+    where.status = params.status as TaskStatus;
   } else {
-    q = q.neq('status', 'closed');
-    if (params.status && STATUS_ORDER.includes(params.status as typeof STATUS_ORDER[number])) {
-      q = q.eq('status', params.status);
-    }
+    where.status = { not: 'closed' };
   }
 
   if (params.priority && /^[1-5]$/.test(params.priority)) {
-    q = q.eq('priority', Number(params.priority));
+    where.priority = Number(params.priority);
   }
   if (params.category && /^\d+$/.test(params.category)) {
-    q = q.eq('category_id', Number(params.category));
+    where.categoryId = Number(params.category);
   }
 
-  const [
-    { data: tasksData, error: tasksErr, count: totalCount },
-    { data: cats },
-    { data: locs },
-  ] = await Promise.all([
-    q
-      .order('priority', { ascending: false })
-      .order('due_date', { ascending: true, nullsFirst: false })
-      .range(from, to),
-    supabase.from('category').select('id, name').order('sort_order'),
-    supabase.from('location').select('id, name'),
+  const [rows, categories, locs] = await Promise.all([
+    prisma.taskWithTotals.findMany({ where }),
+    prisma.category.findMany({
+      select: { id: true, name: true },
+      orderBy: { sortOrder: 'asc' },
+    }),
+    prisma.location.findMany({ select: { id: true, name: true } }),
   ]);
 
-  if (tasksErr) {
-    return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        <strong>Failed to load tasks:</strong> {tasksErr.message}
-      </div>
-    );
-  }
+  // Sort: priority desc, then due date asc with NULLs last (mirrors the old
+  // Supabase `nullsFirst: false`, which MySQL can't express natively). The
+  // task list is small, so sorting + paginating in JS is fine.
+  rows.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    if (a.dueDate && b.dueDate) return a.dueDate.getTime() - b.dueDate.getTime();
+    if (a.dueDate) return -1;
+    if (b.dueDate) return 1;
+    return 0;
+  });
 
-  const tasks = (tasksData ?? []) as TaskRow[];
-  const categories = cats ?? [];
   const catName = new Map<number, string>(categories.map((c) => [c.id, c.name]));
-  const locName = new Map<number, string>((locs ?? []).map((l) => [l.id, l.name]));
+  const locName = new Map<number, string>(locs.map((l) => [l.id, l.name]));
 
   const filterCount =
     (params.q ? 1 : 0) +
@@ -214,13 +205,29 @@ export default async function TasksPage({
     (params.priority ? 1 : 0) +
     (params.category ? 1 : 0);
 
-  // Pagination derived values. totalCount is null only on error/edge cases —
-  // fall back to the number of rows we got so the UI stays sensible.
-  const total      = totalCount ?? tasks.length;
+  // Pagination derived values.
+  const total      = rows.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(requestedPage, totalPages);
   const showingFrom = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
   const showingTo   = Math.min(currentPage * PAGE_SIZE, total);
+
+  const tasks: TaskRow[] = rows
+    .slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+    .map((t) => ({
+      id: t.id,
+      legacy_id: t.legacyId,
+      title: t.title,
+      priority: t.priority,
+      status: t.status,
+      category_id: t.categoryId,
+      location_id: t.locationId,
+      due_date: t.dueDate ? t.dueDate.toISOString().slice(0, 10) : null,
+      total_cost: Number(t.totalCost),
+      subtask_count: Number(t.subtaskCount),
+      subtask_done_count: Number(t.subtaskDoneCount),
+      approved_at: t.approvedAt ? t.approvedAt.toISOString() : null,
+    }));
 
   return (
     <div>

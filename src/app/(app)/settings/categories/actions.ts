@@ -2,26 +2,32 @@
 
 /**
  * Category CRUD Server Actions — createCategory, updateCategory, deleteCategory.
- * Only admins may manage reference data.
+ * Only admins may manage reference data. MySQL has no RLS, so the
+ * requireRole('admin') check here is the ONLY access control.
  */
 
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@/lib/supabase/server';
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
+import { requireRole } from '@/lib/auth';
 
 async function requireAdmin() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated.');
-  const { data: profile } = await supabase
-    .from('user_profile')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle();
-  if (profile?.role !== 'admin') {
+  try {
+    await requireRole('admin');
+  } catch (e) {
+    if ((e as Error).message === 'Not authenticated') {
+      throw new Error('Not authenticated.');
+    }
     throw new Error('Only admins can manage categories.');
   }
-  return { supabase };
+}
+
+function errMsg(e: unknown): string {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    return 'A category with that name already exists.';
+  }
+  return e instanceof Error ? e.message : 'Unexpected error.';
 }
 
 function readName(formData: FormData): string | null {
@@ -32,9 +38,8 @@ function readName(formData: FormData): string | null {
 }
 
 export async function createCategory(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase } = await requireAdmin());
+    await requireAdmin();
   } catch (e) {
     redirect(`/settings/categories/new?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -42,9 +47,10 @@ export async function createCategory(formData: FormData) {
   const name = readName(formData);
   if (!name) redirect('/settings/categories/new?error=Category+name+is+required');
 
-  const { error } = await supabase.from('category').insert({ name });
-  if (error) {
-    redirect(`/settings/categories/new?error=${encodeURIComponent(error.message)}`);
+  try {
+    await prisma.category.create({ data: { name } });
+  } catch (e) {
+    redirect(`/settings/categories/new?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/settings/categories');
@@ -53,9 +59,8 @@ export async function createCategory(formData: FormData) {
 }
 
 export async function updateCategory(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase } = await requireAdmin());
+    await requireAdmin();
   } catch (e) {
     redirect(`/settings/categories?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -66,9 +71,10 @@ export async function updateCategory(formData: FormData) {
   const name = readName(formData);
   if (!name) redirect(`/settings/categories/${id}/edit?error=Category+name+is+required`);
 
-  const { error } = await supabase.from('category').update({ name }).eq('id', id);
-  if (error) {
-    redirect(`/settings/categories/${id}/edit?error=${encodeURIComponent(error.message)}`);
+  try {
+    await prisma.category.update({ where: { id }, data: { name } });
+  } catch (e) {
+    redirect(`/settings/categories/${id}/edit?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/settings/categories');
@@ -77,9 +83,8 @@ export async function updateCategory(formData: FormData) {
 }
 
 export async function deleteCategory(formData: FormData) {
-  let supabase: Awaited<ReturnType<typeof createClient>>;
   try {
-    ({ supabase } = await requireAdmin());
+    await requireAdmin();
   } catch (e) {
     redirect(`/settings/categories?error=${encodeURIComponent((e as Error).message)}`);
   }
@@ -87,9 +92,11 @@ export async function deleteCategory(formData: FormData) {
   const id = Number(String(formData.get('id') ?? '').trim());
   if (!id) redirect('/settings/categories?error=Missing+category+id');
 
-  const { error } = await supabase.from('category').delete().eq('id', id);
-  if (error) {
-    redirect(`/settings/categories?error=${encodeURIComponent(error.message)}`);
+  try {
+    // task.category_id is ON DELETE SET NULL — tasks keep working.
+    await prisma.category.delete({ where: { id } });
+  } catch (e) {
+    redirect(`/settings/categories?error=${encodeURIComponent(errMsg(e))}`);
   }
 
   revalidatePath('/settings/categories');
