@@ -2,7 +2,7 @@
 
 /**
  * Server Action: request a password-reset link (replaces
- * supabase.auth.resetPasswordForEmail).
+ * the legacy hosted-auth password-reset email).
  *
  * Scheme (must match the admin invite flow):
  *   raw  = crypto.randomBytes(32).toString('hex')          — 64 hex chars

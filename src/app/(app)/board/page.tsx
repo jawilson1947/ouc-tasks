@@ -50,7 +50,7 @@ export default async function BoardPage() {
   }
 
   // Sort: priority desc, then due_date asc with NULLs last (MySQL sorts NULLs
-  // first on ASC, so replicate the old Supabase ordering in JS).
+  // first on ASC, so replicate the legacy Postgres ordering in JS).
   tasksRaw.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;
     const da = a.dueDate?.getTime() ?? Infinity;

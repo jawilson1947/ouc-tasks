@@ -1,11 +1,11 @@
 /**
- * Auth.js / NextAuth configuration — replaces Supabase Auth.
+ * Auth.js / NextAuth configuration — replaces the legacy hosted auth provider.
  *
  * Strategy: Credentials provider (email + password against
  * user_profile.password_hash) with stateless JWT sessions. The JWT carries
  * the user's id and role so authorization checks never need a DB round-trip.
  *
- * IMPORTANT — access control: Supabase enforced row-level security in the
+ * IMPORTANT — access control: The legacy Postgres backend enforced row-level security in the
  * database. MySQL has no RLS, so every server action and API route MUST
  * check the session role via these helpers before touching Prisma.
  *
@@ -103,7 +103,7 @@ export const authOptions: NextAuthOptions = {
 // Server-side helpers (Server Components, Server Actions, Route Handlers)
 // ---------------------------------------------------------------------------
 
-/** Current session, or null. Drop-in replacement for supabase.auth.getUser(). */
+/** Current session, or null. Drop-in replacement for the legacy getUser() helper. */
 export function auth() {
   return getServerSession(authOptions)
 }

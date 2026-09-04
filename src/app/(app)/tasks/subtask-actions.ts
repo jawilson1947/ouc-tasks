@@ -4,7 +4,7 @@
  * Subtask Server Actions — create, update, delete, and status-cycle.
  *
  * Authorization: admin and editor can write (matching the pre-migration app
- * behavior). Supabase RLS is gone (MySQL), so the ownership rule the old
+ * behavior). Postgres RLS is gone (MySQL), so the ownership rule the old
  * subtask_editor_write policy enforced — editors may only touch sub-tasks of
  * tasks they created — is checked explicitly here.
  *

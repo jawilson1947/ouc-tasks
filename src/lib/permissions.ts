@@ -5,7 +5,7 @@
  * themselves are defined in migration 0002 (admin, editor, viewer) and
  * extended in migration 0006 (approver).
  *
- * NOTE (MySQL migration): Supabase RLS is gone. These helpers — together
+ * NOTE (MySQL migration): Postgres RLS is gone. These helpers — together
  * with requireRole() in src/lib/auth.ts — are now the ONLY access control
  * in the system. Every server action and API route must call them.
  *

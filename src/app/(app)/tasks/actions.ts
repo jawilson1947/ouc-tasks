@@ -3,7 +3,7 @@
 /**
  * Task CRUD Server Actions: createTask, updateTask, deleteTask.
  *
- * Authorization: admin, editor, and approver can write. Supabase RLS is gone
+ * Authorization: admin, editor, and approver can write. Postgres RLS is gone
  * (MySQL has no row-level security), so the rule it used to enforce —
  * "editor can only mutate own tasks; admin and approver may mutate anything"
  * — is now checked explicitly here.

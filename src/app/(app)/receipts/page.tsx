@@ -28,7 +28,7 @@ type Task = {
 export default async function ReceiptsPage() {
   let rows;
   try {
-    // MySQL sorts NULLs last on DESC, which matches the old Supabase
+    // MySQL sorts NULLs last on DESC, which matches the legacy Postgres
     // `nullsFirst: false` ordering — no JS re-sort needed here.
     rows = await prisma.attachment.findMany({
       where: { type: 'receipt' },

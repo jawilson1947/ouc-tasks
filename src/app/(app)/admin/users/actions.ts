@@ -5,7 +5,7 @@
  *
  * All actions enforce the admin role via requireRole('admin') before doing
  * anything privileged — this is the application-layer replacement for the
- * old Supabase RLS + Auth Admin API.
+ * legacy Postgres RLS + hosted Auth Admin API.
  *
  * User creation no longer goes through an auth provider:
  *   • If the admin typed a password, it is bcrypt-hashed straight into

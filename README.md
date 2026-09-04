@@ -19,14 +19,16 @@ A web app that replaces the legacy Word-document task list at **Oakwood Universi
 | `docs/mockups/` | Static HTML mockups (dashboard, login, task detail) |
 | `logos/` | Master brand assets (original filenames preserved) |
 | `public/logos/` | Runtime logo copies with web-safe kebab-case names |
-| `supabase/migrations/` | Numbered SQL migrations — run on Supabase project |
+| `prisma/` | Prisma schema + `mysql_schema.sql` (MySQL 5.7 DDL, applied via `npm run db:schema`) |
 | `src/` | Next.js application code (App Router, TypeScript, Tailwind) |
-| `scripts/` | One-off scripts including the legacy task migration |
+| `scripts/` | `apply-mysql-schema.mjs` — applies the MySQL DDL |
 
 ## Tech stack
 
 - **Frontend:** Next.js (App Router) · TypeScript · Tailwind CSS
-- **Backend / DB / Auth / Storage:** Supabase (PostgreSQL · Row-Level Security)
+- **Database:** MySQL 5.7 via Prisma ORM
+- **Auth:** NextAuth (credentials, bcrypt, JWT sessions)
+- **File storage:** Vercel Blob (private store)
 - **Hosting:** Vercel
 - **DNS:** Cloudflare
 - **Charts:** Chart.js
@@ -45,9 +47,9 @@ npm run dev                       # http://localhost:3000
 
 ## Database setup
 
-1. Create a new Supabase project at https://supabase.com
-2. In the project SQL editor, run `supabase/migrations/0001_initial_schema.sql`
-3. Copy the project URL and anon key into `.env.local`
+1. Create a MySQL database named `ouctasks` and a user with full grants on it
+2. Put the connection string in `.env.local` as `DATABASE_URL`
+3. Run `npm run db:schema` to apply `prisma/mysql_schema.sql`, then `npx prisma generate`
 
 ## Mockups
 

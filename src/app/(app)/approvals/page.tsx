@@ -88,7 +88,7 @@ export default async function ApprovalsPage({
   }
 
   // Sort priority desc, then due_date asc with NULLs last (matches the old
-  // Supabase ordering — MySQL sorts NULLs first on ASC), then paginate.
+  // legacy Postgres ordering — MySQL sorts NULLs first on ASC), then paginate.
   // The queue is small, so fetching all rows and slicing in JS keeps the
   // exact count without a second query.
   allRows.sort((a, b) => {

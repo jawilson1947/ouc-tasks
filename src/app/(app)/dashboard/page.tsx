@@ -100,7 +100,7 @@ export default async function DashboardPage() {
   }
 
   // Sort: priority desc, then due_date asc with NULLs last (matches the old
-  // Supabase `nullsFirst: false` — MySQL sorts NULLs first on ASC, so we
+  // the legacy Postgres `NULLS LAST` ordering — MySQL sorts NULLs first on ASC, so we
   // sort in JS instead).
   tasksRaw.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;

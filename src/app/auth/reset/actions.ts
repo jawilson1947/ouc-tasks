@@ -2,7 +2,7 @@
 
 /**
  * Server Action: set a new password using a one-time reset token
- * (replaces supabase.auth.updateUser({ password })).
+ * (replaces the legacy hosted-auth password update).
  *
  * The token arrives as hidden form fields (?token=…&email=… from the email
  * link, re-posted by the form). Validation: sha256(raw token) must equal

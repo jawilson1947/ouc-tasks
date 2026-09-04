@@ -59,7 +59,7 @@ export default async function MyTasksPage({
   ]);
 
   // Sort: priority desc, then due date asc with NULLs last (mirrors the old
-  // Supabase `nullsFirst: false`, which MySQL can't express natively). The
+  // the legacy Postgres `NULLS LAST` ordering, which MySQL can't express natively). The
   // per-user queue is small, so sorting + paginating in JS is fine.
   rows.sort((a, b) => {
     if (b.priority !== a.priority) return b.priority - a.priority;

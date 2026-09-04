@@ -1,5 +1,5 @@
 /**
- * Applies supabase/migrations/mysql_schema.sql to the MySQL database in
+ * Applies prisma/mysql_schema.sql to the MySQL database in
  * DATABASE_URL. Parses the file statement-by-statement, honouring
  * DELIMITER $$ ... DELIMITER ; blocks (mysql2 can't process DELIMITER).
  *
@@ -14,7 +14,7 @@ if (!url) {
   process.exit(1)
 }
 
-const sql = await readFile('supabase/migrations/mysql_schema.sql', 'utf8')
+const sql = await readFile('prisma/mysql_schema.sql', 'utf8')
 
 // ---------------------------------------------------------------------------
 // Split into executable statements, respecting DELIMITER changes.

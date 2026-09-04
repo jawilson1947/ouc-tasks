@@ -2,7 +2,7 @@
 
 /**
  * Delete a photo/document attachment: allowed for admins or the original
- * uploader (same rule the Supabase RLS policy enforced). Removes the Vercel
+ * uploader (same rule the legacy Postgres RLS policy enforced). Removes the Vercel
  * Blob first (best-effort — del() accepts the pathname stored in
  * storage_path; already-gone blobs are ignored), then the attachment row.
  */

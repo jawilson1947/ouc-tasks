@@ -7,14 +7,11 @@
     "build": "next build",
     "start": "next start",
     "postinstall": "prisma generate",
-    "migrate:tasks": "node --env-file=.env.local --import=tsx scripts/migrate-tasks.ts",
-    "migrate:data": "node --env-file=.env.local --import=tsx scripts/migrate-supabase-to-mysql.ts",
-    "migrate:storage": "node --env-file=.env.local --import=tsx scripts/migrate-storage-to-blob.ts"
+    "db:schema": "node --env-file=.env.local scripts/apply-mysql-schema.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "@sendgrid/mail": "^8.1.3",
-    "@supabase/supabase-js": "^2.105.3",
     "@vercel/blob": "^2.5.0",
     "bcryptjs": "^3.0.3",
     "mysql2": "^3.22.5",
